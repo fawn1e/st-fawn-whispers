@@ -698,6 +698,8 @@ function createAssistantItem(asst) {
         <span class="whispers-assistant-name">${escapeHtml(asst.name || 'Unnamed')}</span>
         <span class="whispers-assistant-badges">${badge}</span>
         <span class="whispers-assistant-actions">
+            <button class="asst-info-btn" title="Author's Note"><i class="fa-solid fa-circle-info"></i></button>
+            <button class="edit-asst-btn" title="Edit"><i class="fa-solid fa-pen"></i></button>
             <button class="export-btn" title="Export PNG"><i class="fa-solid fa-file-export"></i></button>
             <button class="delete-btn" title="Delete"><i class="fa-solid fa-trash"></i></button>
         </span>
@@ -713,9 +715,21 @@ function createAssistantItem(asst) {
         item.classList.remove('dragging');
     });
 
-    // Click to open edit popup
+    // Click row to open edit popup
     item.addEventListener('click', (e) => {
         if (e.target.closest('.whispers-assistant-actions')) return;
+        showAssistantEditPopup(asst);
+    });
+
+    // Info (author's note)
+    item.querySelector('.asst-info-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        showAssistantNotePopup(asst);
+    });
+
+    // Edit
+    item.querySelector('.edit-asst-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
         showAssistantEditPopup(asst);
     });
 
@@ -785,6 +799,10 @@ function showAssistantEditPopup(asst) {
                         <option value="chat" ${asst.binding === 'chat' ? 'selected' : ''}>This Chat</option>
                     </select>
                 </div>
+                <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-note-sticky"></i> Author's Note <span style="font-size:0.75em;opacity:0.5;">(HTML supported)</span></label>
+                    <textarea class="w-edit-note" rows="3" placeholder="Notes about this assistant...">${escapeHtml(asst.note || '')}</textarea>
+                </div>
                 <div class="whispers-row">
                     <button class="menu_button w-save-btn"><i class="fa-solid fa-floppy-disk"></i> Save</button>
                 </div>
@@ -792,9 +810,10 @@ function showAssistantEditPopup(asst) {
         </div>
     `;
 
-    // Close
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-    overlay.querySelector('.whispers-edit-popup-close').addEventListener('click', () => overlay.remove());
+    // Close — stopPropagation prevents ST drawer from collapsing
+    overlay.addEventListener('mousedown', (e) => e.stopPropagation());
+    overlay.addEventListener('click', (e) => { e.stopPropagation(); if (e.target === overlay) overlay.remove(); });
+    overlay.querySelector('.whispers-edit-popup-close').addEventListener('click', (e) => { e.stopPropagation(); overlay.remove(); });
 
     const body = overlay.querySelector('.whispers-edit-popup-body');
 
@@ -810,6 +829,7 @@ function showAssistantEditPopup(asst) {
         asst.name = body.querySelector('.w-edit-name').value || 'Unnamed';
         asst.character = body.querySelector('.w-edit-character').value || '';
         asst.bans = body.querySelector('.w-edit-bans').value || '';
+        asst.note = body.querySelector('.w-edit-note').value || '';
 
         const newBinding = body.querySelector('.w-edit-binding').value;
         asst.binding = newBinding;
@@ -872,9 +892,10 @@ function showFolderEditPopup(folder) {
         </div>
     `;
 
-    // Close
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-    overlay.querySelector('.whispers-edit-popup-close').addEventListener('click', () => overlay.remove());
+    // Close — stopPropagation prevents ST drawer from collapsing
+    overlay.addEventListener('mousedown', (e) => e.stopPropagation());
+    overlay.addEventListener('click', (e) => { e.stopPropagation(); if (e.target === overlay) overlay.remove(); });
+    overlay.querySelector('.whispers-edit-popup-close').addEventListener('click', (e) => { e.stopPropagation(); overlay.remove(); });
 
     // Build icon picker grid
     const pickerGrid = overlay.querySelector('#wf-icon-picker');
@@ -930,10 +951,46 @@ function showNotePopup(folder) {
         </div>
     `;
 
+    overlay.addEventListener('mousedown', (e) => e.stopPropagation());
     overlay.addEventListener('click', (e) => {
+        e.stopPropagation();
         if (e.target === overlay) overlay.remove();
     });
-    overlay.querySelector('.whispers-note-popup-close').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('.whispers-note-popup-close').addEventListener('click', (e) => { e.stopPropagation(); overlay.remove(); });
+
+    document.body.appendChild(overlay);
+}
+
+// ── Assistant Note Popup ────────────────────────────────────────
+
+function showAssistantNotePopup(asst) {
+    closeAllPopups();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'whispers-edit-popup-overlay';
+
+    const avatarHtml = asst.avatar
+        ? `<img src="${asst.avatar}" alt="" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">`
+        : '<i class="fa-solid fa-ghost"></i>';
+
+    overlay.innerHTML = `
+        <div class="whispers-note-popup">
+            <div class="whispers-note-popup-header">
+                ${avatarHtml}
+                <strong>${escapeHtml(asst.name || 'Assistant')}</strong>
+                <span style="flex:1"></span>
+                <button class="whispers-note-popup-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="whispers-note-popup-body">${asst.note || '<em style="opacity:0.5;">No notes yet</em>'}</div>
+        </div>
+    `;
+
+    overlay.addEventListener('mousedown', (e) => e.stopPropagation());
+    overlay.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (e.target === overlay) overlay.remove();
+    });
+    overlay.querySelector('.whispers-note-popup-close').addEventListener('click', (e) => { e.stopPropagation(); overlay.remove(); });
 
     document.body.appendChild(overlay);
 }
