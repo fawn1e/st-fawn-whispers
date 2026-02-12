@@ -119,6 +119,11 @@ function buildSystemPrompt(assistant) {
     prompt = prompt.replace(/\{\{character\}\}/g, assistant.character || 'Helpful and friendly');
     prompt = prompt.replace(/\{\{bans\}\}/g, assistant.bans || 'None');
 
+    // Inject message example if present
+    if (assistant.messageExample) {
+        prompt += '\n\nExample of how you should write:\n' + assistant.messageExample;
+    }
+
     const ctx = SillyTavern.getContext();
     const chat = ctx.chat || [];
     const limit = settings.messageLimit || 20;
@@ -833,6 +838,10 @@ function showAssistantEditPopup(asst) {
                     <textarea class="w-edit-bans" rows="2" placeholder="Never say...">${escapeHtml(asst.bans || '')}</textarea>
                 </div>
                 <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-comment-dots"></i> Message Example</label>
+                    <textarea class="w-edit-example" rows="3" placeholder="Write an example of how this assistant should respond...">${escapeHtml(asst.messageExample || '')}</textarea>
+                </div>
+                <div class="whispers-field-group">
                     <label><i class="fa-solid fa-link"></i> Binding</label>
                     <select class="w-edit-binding">
                         <option value="none" ${asst.binding === 'none' || !asst.binding ? 'selected' : ''}>None</option>
@@ -871,6 +880,7 @@ function showAssistantEditPopup(asst) {
         asst.name = body.querySelector('.w-edit-name').value || 'Unnamed';
         asst.character = body.querySelector('.w-edit-character').value || '';
         asst.bans = body.querySelector('.w-edit-bans').value || '';
+        asst.messageExample = body.querySelector('.w-edit-example').value || '';
         asst.note = body.querySelector('.w-edit-note').value || '';
 
         const newBinding = body.querySelector('.w-edit-binding').value;
