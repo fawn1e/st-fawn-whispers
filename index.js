@@ -230,16 +230,96 @@ async function exportFolderToPng(folder, assistants) {
     URL.revokeObjectURL(url);
 }
 
+// ── NPC PNG Export ──────────────────────────────────────────────
+
+async function exportNpcToPng(npc) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 400; canvas.height = 400;
+    const c = canvas.getContext('2d');
+    if (npc.avatar) {
+        const img = new Image();
+        await new Promise((r, e) => { img.onload = r; img.onerror = e; img.src = npc.avatar; });
+        c.drawImage(img, 0, 0, 400, 400);
+    } else {
+        const g = c.createLinearGradient(0, 0, 400, 400);
+        g.addColorStop(0, '#1da1f2'); g.addColorStop(1, '#0d47a1');
+        c.fillStyle = g; c.fillRect(0, 0, 400, 400);
+        c.fillStyle = '#fff'; c.font = 'bold 44px sans-serif';
+        c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillText(npc.name || 'NPC', 200, 160);
+        c.font = '22px sans-serif'; c.globalAlpha = 0.7;
+        c.fillText('@' + (npc.username || 'npc'), 200, 210);
+        c.font = '18px sans-serif'; c.globalAlpha = 0.5;
+        c.fillText('Whispers NPC', 200, 260); c.globalAlpha = 1;
+    }
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+    const pngBytes = new Uint8Array(await blob.arrayBuffer());
+    const data = {
+        type: 'npc',
+        name: npc.name, username: npc.username, character: npc.character,
+        bans: npc.bans, postExample: npc.postExample, avatar: npc.avatar || null,
+    };
+    const result = injectTextChunk(pngBytes, 'whispers', JSON.stringify(data));
+    const dlBlob = new Blob([result], { type: 'image/png' });
+    const url = URL.createObjectURL(dlBlob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${npc.name || 'npc'}.png`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+async function exportNpcFolderToPng(folder, npcs) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 400; canvas.height = 400;
+    const c = canvas.getContext('2d');
+    const g = c.createLinearGradient(0, 0, 400, 400);
+    g.addColorStop(0, folder.color || '#1da1f2');
+    g.addColorStop(1, '#111');
+    c.fillStyle = g; c.fillRect(0, 0, 400, 400);
+    c.fillStyle = '#fff'; c.font = 'bold 38px sans-serif';
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(folder.name || 'Folder', 200, 170);
+    c.font = '20px sans-serif'; c.globalAlpha = 0.6;
+    c.fillText(`${npcs.length} NPC(s)`, 200, 220);
+    c.font = '16px sans-serif'; c.globalAlpha = 0.4;
+    c.fillText('Whispers NPC Folder', 200, 260);
+    c.globalAlpha = 1;
+
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+    const pngBytes = new Uint8Array(await blob.arrayBuffer());
+    const data = {
+        type: 'npc_folder',
+        folder: { name: folder.name, icon: folder.icon, color: folder.color, note: folder.note },
+        npcs: npcs.map(n => ({ name: n.name, username: n.username, character: n.character, bans: n.bans, postExample: n.postExample, avatar: n.avatar })),
+    };
+    const result = injectTextChunk(pngBytes, 'whispers', JSON.stringify(data));
+    const dlBlob = new Blob([result], { type: 'image/png' });
+    const url = URL.createObjectURL(dlBlob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${folder.name || 'npc_folder'}.png`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
 async function importFromPng(file) {
     const pngBytes = new Uint8Array(await file.arrayBuffer());
     const jsonStr = extractTextChunk(pngBytes, 'whispers');
     if (!jsonStr) { toastr.error('No Whispers data in this PNG.'); return null; }
     try {
         const d = JSON.parse(jsonStr);
+        if (d.type === 'npc_folder') {
+            return { type: 'npc_folder', data: d };
+        }
+        if (d.type === 'npc') {
+            return {
+                type: 'npc',
+                data: { id: generateId(), name: d.name || 'Imported NPC', username: d.username || 'npc', character: d.character || '', bans: d.bans || '', postExample: d.postExample || '', avatar: d.avatar || null, binding: 'global', bindingTarget: null, folderId: null }
+            };
+        }
         if (d.type === 'folder') {
             return { type: 'folder', data: d };
         }
-        // Single assistant
+        // Single assistant (legacy)
         return {
             type: 'assistant',
             data: { id: generateId(), name: d.name || 'Imported', character: d.character || '', bans: d.bans || '', avatar: d.avatar || null, binding: 'none', bindingTarget: null, folderId: null }
@@ -549,7 +629,9 @@ function buildSettingsHtml() {
                         <div class="whispers-row">
                             <button class="menu_button" id="whispers-btn-new-npc" title="New NPC"><i class="fa-solid fa-plus"></i> NPC</button>
                             <button class="menu_button" id="whispers-btn-new-npc-folder" title="New NPC folder"><i class="fa-solid fa-folder-plus"></i> Folder</button>
+                            <button class="menu_button" id="whispers-btn-npc-import" title="Import NPC PNG"><i class="fa-solid fa-file-import"></i> Import</button>
                         </div>
+                        <input type="file" accept=".png" class="whispers-hidden-input" id="whispers-npc-import-file">
                         <input type="file" accept="image/*" class="whispers-hidden-input" id="whispers-npc-avatar-file">
                     </div>
                 </div>
@@ -761,6 +843,7 @@ function renderNpcList() {
                 <span class="whispers-folder-count">${folderNpcs.length}</span>
                 <span class="whispers-folder-actions">
                     <button class="edit-folder-btn" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                    <button class="export-folder-btn" title="Export"><i class="fa-solid fa-file-export"></i></button>
                     <button class="delete-btn" title="Delete"><i class="fa-solid fa-trash"></i></button>
                 </span>
                 <i class="fa-solid fa-chevron-right whispers-folder-chevron"></i>
@@ -777,6 +860,11 @@ function renderNpcList() {
         folderEl.querySelector('.edit-folder-btn').addEventListener('click', (e) => {
             e.stopPropagation();
             showNpcFolderEditPopup(folder);
+        });
+
+        folderEl.querySelector('.export-folder-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            exportNpcFolderToPng(folder, folderNpcs);
         });
 
         folderEl.querySelector('.delete-btn').addEventListener('click', (e) => {
@@ -820,6 +908,7 @@ function buildNpcItem(npc) {
             </div>
             <div class="whispers-assistant-actions">
                 <button class="edit-btn" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                <button class="export-btn" title="Export"><i class="fa-solid fa-file-export"></i></button>
                 <button class="delete-btn" title="Delete"><i class="fa-solid fa-trash"></i></button>
             </div>
         </div>
@@ -830,6 +919,11 @@ function buildNpcItem(npc) {
     item.querySelector('.edit-btn').addEventListener('click', (e) => {
         e.stopPropagation();
         showNpcEditPopup(npc);
+    });
+
+    item.querySelector('.export-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        exportNpcToPng(npc);
     });
 
     item.querySelector('.delete-btn').addEventListener('click', (e) => {
@@ -1112,18 +1206,19 @@ function renderTwitterFeed() {
 
         // Render existing replies
         if (post.replies && post.replies.length > 0) {
-            for (const reply of post.replies) {
-                wrap.appendChild(buildReplyElement(reply));
-            }
+            post.replies.forEach((reply, ri) => {
+                wrap.appendChild(buildReplyElement(reply, index, ri));
+            });
         }
 
         feed.appendChild(wrap);
     });
 }
 
-function buildReplyElement(reply) {
+function buildReplyElement(reply, postIndex, replyIndex) {
     const el = document.createElement('div');
     el.className = 'whispers-tweet whispers-tweet-reply';
+    el.dataset.replyIndex = replyIndex;
 
     const isUser = reply.isUser;
     const avatarHtml = reply.avatar
@@ -1132,6 +1227,12 @@ function buildReplyElement(reply) {
 
     const timeAgo = reply.timestamp ? getTimeAgo(reply.timestamp) : 'now';
 
+    // Action buttons: delete always, retry for NPC replies
+    let actionsHtml = `<button class="whispers-reply-action-btn whispers-reply-delete" title="Delete"><i class="fa-solid fa-trash"></i></button>`;
+    if (!isUser) {
+        actionsHtml = `<button class="whispers-reply-action-btn whispers-reply-retry" title="Retry"><i class="fa-solid fa-rotate-right"></i></button>` + actionsHtml;
+    }
+
     el.innerHTML = `
         ${avatarHtml}
         <div class="whispers-tweet-body">
@@ -1139,10 +1240,27 @@ function buildReplyElement(reply) {
                 <span class="whispers-tweet-name">${escapeHtml(reply.name || 'Anon')}</span>
                 <span class="whispers-tweet-username">@${escapeHtml(reply.username || 'user')}</span>
                 <span class="whispers-tweet-time">· ${timeAgo}</span>
+                <span class="whispers-reply-actions">${actionsHtml}</span>
             </div>
             <div class="whispers-tweet-text">${escapeHtml(reply.content || '')}</div>
         </div>
     `;
+
+    // Delete handler
+    el.querySelector('.whispers-reply-delete').addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteTweetReply(postIndex, replyIndex, el);
+    });
+
+    // Retry handler (NPC only)
+    const retryBtn = el.querySelector('.whispers-reply-retry');
+    if (retryBtn) {
+        retryBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            retryTweetReply(postIndex, replyIndex, el);
+        });
+    }
+
     return el;
 }
 
@@ -1204,7 +1322,8 @@ function showReplyInput(wrapEl, post, postIndex) {
 
         // Remove input, render user reply
         inputWrap.remove();
-        wrapEl.appendChild(buildReplyElement(userReply));
+        const replyIdx = posts[postIndex].replies.length - 1;
+        wrapEl.appendChild(buildReplyElement(userReply, postIndex, replyIdx));
 
         // Now generate NPC reaction
         await generateTweetReply(post, userReply, postIndex, wrapEl);
@@ -1279,7 +1398,8 @@ Write a SHORT reply back to them (1-3 sentences). Stay in character. Be reactive
             }
 
             // Render
-            wrapEl.appendChild(buildReplyElement(npcReplyData));
+            const npcReplyIdx = posts[postIndex].replies.length - 1;
+            wrapEl.appendChild(buildReplyElement(npcReplyData, postIndex, npcReplyIdx));
         }
     } catch (err) {
         console.error('[Whispers] Tweet reply error:', err);
@@ -2037,13 +2157,9 @@ function renderChatMessages() {
     const history = getWhispersHistory();
     if (history.length === 0) { if (empty) empty.style.display = ''; return; }
     if (empty) empty.style.display = 'none';
-    for (const msg of history) {
-        const b = document.createElement('div');
-        b.className = `whispers-msg whispers-msg-${msg.role}`;
-        const t = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-        b.innerHTML = `${escapeHtml(msg.content)}<span class="whispers-msg-time">${t}</span>`;
-        el.appendChild(b);
-    }
+    history.forEach((msg, index) => {
+        el.appendChild(buildChatBubble(msg, index));
+    });
     el.scrollTop = el.scrollHeight;
 }
 
@@ -2052,12 +2168,153 @@ function addBubble(role, content) {
     const empty = document.getElementById('whispers-empty-state');
     if (!el) return;
     if (empty) empty.style.display = 'none';
-    const b = document.createElement('div');
-    b.className = `whispers-msg whispers-msg-${role}`;
-    const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    b.innerHTML = `${escapeHtml(content)}<span class="whispers-msg-time">${t}</span>`;
-    el.appendChild(b);
+    const history = getWhispersHistory();
+    const index = history.length - 1;
+    el.appendChild(buildChatBubble({ role, content, timestamp: Date.now() }, index));
     el.scrollTop = el.scrollHeight;
+}
+
+function buildChatBubble(msg, index) {
+    const b = document.createElement('div');
+    b.className = `whispers-msg whispers-msg-${msg.role}`;
+    b.dataset.index = index;
+    const t = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
+    // Action buttons
+    let actionsHtml = '';
+    if (msg.role === 'assistant') {
+        actionsHtml = `<span class="whispers-msg-actions">
+            <button class="whispers-msg-action-btn whispers-msg-retry" title="Retry"><i class="fa-solid fa-rotate-right"></i></button>
+            <button class="whispers-msg-action-btn whispers-msg-delete" title="Delete"><i class="fa-solid fa-trash"></i></button>
+        </span>`;
+    } else {
+        actionsHtml = `<span class="whispers-msg-actions">
+            <button class="whispers-msg-action-btn whispers-msg-delete" title="Delete"><i class="fa-solid fa-trash"></i></button>
+        </span>`;
+    }
+
+    b.innerHTML = `${escapeHtml(msg.content)}<span class="whispers-msg-time">${t}</span>${actionsHtml}`;
+
+    // Delete handler
+    b.querySelector('.whispers-msg-delete').addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteChatMessage(index);
+    });
+
+    // Retry handler (assistant only)
+    const retryBtn = b.querySelector('.whispers-msg-retry');
+    if (retryBtn) {
+        retryBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            retryChatMessage(index);
+        });
+    }
+
+    return b;
+}
+
+// ── Chat Message Delete / Retry ─────────────────────────────────
+
+async function deleteChatMessage(index) {
+    const history = getWhispersHistory();
+    if (index < 0 || index >= history.length) return;
+    history.splice(index, 1);
+    await saveChatMeta();
+    renderChatMessages();
+}
+
+async function retryChatMessage(index) {
+    if (isGenerating) return;
+    const history = getWhispersHistory();
+    if (index < 0 || index >= history.length) return;
+    const msg = history[index];
+    if (msg.role !== 'assistant') return;
+
+    // Remove the assistant message
+    history.splice(index, 1);
+    await saveChatMeta();
+    renderChatMessages();
+
+    // Find the last user message before this
+    const lastUserMsg = [...history].reverse().find(m => m.role === 'user');
+    if (!lastUserMsg) return;
+
+    const assistant = getActiveAssistant();
+    if (!assistant) { toastr.warning('No assistant configured.'); return; }
+
+    isGenerating = true;
+    const sendBtn = document.getElementById('whispers-send');
+    if (sendBtn) sendBtn.disabled = true;
+    const statusEl = document.getElementById('whispers-chat-status');
+    if (statusEl) statusEl.textContent = 'Typing...';
+    showTyping();
+
+    try {
+        const response = await generateResponse(lastUserMsg.content);
+        hideTyping();
+        history.push({ role: 'assistant', content: response, timestamp: Date.now() });
+        await saveChatMeta();
+        addBubble('assistant', response);
+    } catch (err) {
+        hideTyping();
+        toastr.error(`Retry failed: ${err.message}`);
+        history.push({ role: 'assistant', content: `Error: ${err.message}`, timestamp: Date.now() });
+        await saveChatMeta();
+        addBubble('assistant', `Error: ${err.message}`);
+    } finally {
+        isGenerating = false;
+        if (sendBtn) sendBtn.disabled = false;
+        if (statusEl) statusEl.textContent = 'Online';
+    }
+}
+
+// ── Tweet Reply Delete / Retry ──────────────────────────────────
+
+function deleteTweetReply(postIndex, replyIndex, replyEl) {
+    const posts = getTwitterPosts();
+    if (!posts[postIndex] || !posts[postIndex].replies) return;
+    posts[postIndex].replies.splice(replyIndex, 1);
+    setTwitterPosts(posts);
+    replyEl.remove();
+    // Re-index remaining reply elements
+    const wrapEl = replyEl.closest('.whispers-tweet-wrap');
+    if (wrapEl) {
+        wrapEl.querySelectorAll('.whispers-tweet-reply').forEach((el, i) => {
+            el.dataset.replyIndex = i;
+        });
+    }
+}
+
+async function retryTweetReply(postIndex, replyIndex, replyEl) {
+    const posts = getTwitterPosts();
+    if (!posts[postIndex] || !posts[postIndex].replies) return;
+    const npcReply = posts[postIndex].replies[replyIndex];
+    if (!npcReply || npcReply.isUser) return;
+
+    // Find the user reply that triggered this NPC reply (the one right before it)
+    let userReply = null;
+    for (let i = replyIndex - 1; i >= 0; i--) {
+        if (posts[postIndex].replies[i].isUser) {
+            userReply = posts[postIndex].replies[i];
+            break;
+        }
+    }
+    if (!userReply) return;
+
+    // Remove old NPC reply
+    posts[postIndex].replies.splice(replyIndex, 1);
+    setTwitterPosts(posts);
+    const wrapEl = replyEl.closest('.whispers-tweet-wrap');
+    replyEl.remove();
+
+    // Re-generate
+    if (wrapEl) {
+        await generateTweetReply(posts[postIndex], userReply, postIndex, wrapEl);
+        // Re-index
+        wrapEl.querySelectorAll('.whispers-tweet-reply').forEach((el, i) => {
+            el.dataset.replyIndex = i;
+        });
+    }
 }
 
 function showTyping() {
@@ -2398,6 +2655,43 @@ function bindEvents() {
         saveSettings();
         renderNpcList();
         showNpcFolderEditPopup(f);
+    });
+
+    // NPC Import
+    el('whispers-btn-npc-import')?.addEventListener('click', () => el('whispers-npc-import-file')?.click());
+    el('whispers-npc-import-file')?.addEventListener('change', async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const result = await importFromPng(file);
+        if (!result) { e.target.value = ''; return; }
+        const settings = getSettings();
+
+        if (result.type === 'npc_folder') {
+            const fd = result.data;
+            const newFolder = { id: generateId(), name: fd.folder.name, icon: fd.folder.icon, color: fd.folder.color, note: fd.folder.note || '' };
+            if (!settings.npcFolders) settings.npcFolders = [];
+            settings.npcFolders.push(newFolder);
+            for (const nd of fd.npcs) {
+                if (!settings.npcAssistants) settings.npcAssistants = [];
+                settings.npcAssistants.push({
+                    id: generateId(), name: nd.name, username: nd.username || 'npc',
+                    character: nd.character, bans: nd.bans, postExample: nd.postExample || '',
+                    avatar: nd.avatar, binding: 'global', bindingTarget: null, folderId: newFolder.id
+                });
+            }
+            toastr.success(`Imported NPC folder: ${newFolder.name} (${fd.npcs.length} NPC(s))`);
+        } else if (result.type === 'npc') {
+            if (!settings.npcAssistants) settings.npcAssistants = [];
+            settings.npcAssistants.push(result.data);
+            toastr.success(`Imported NPC: ${result.data.name}`);
+        } else {
+            toastr.warning('This PNG contains a chat assistant, not an NPC. Use the Chat Assistants import button.');
+            e.target.value = '';
+            return;
+        }
+        saveSettings();
+        renderNpcList();
+        e.target.value = '';
     });
 
     el('whispers-npc-avatar-file')?.addEventListener('change', (e) => {
