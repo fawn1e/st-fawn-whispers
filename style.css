@@ -3,6 +3,47 @@
    Fully adaptive to SillyTavern themes via CSS variables.
    ============================================================ */
 
+/* ── Collapsible Extension Panel ─────────────────────────────── */
+
+.whispers-extension-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+    padding: 10px 0;
+}
+
+.whispers-extension-header h3 {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--SmartThemeBodyColor);
+}
+
+.whispers-extension-header .whispers-collapse-icon {
+    transition: transform 0.25s ease;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.5;
+}
+
+.whispers-extension-header.collapsed .whispers-collapse-icon {
+    transform: rotate(-90deg);
+}
+
+.whispers-extension-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.whispers-extension-body.collapsed {
+    display: none;
+}
+
 /* ── Settings Panel ─────────────────────────────────────────── */
 
 .whispers-settings {
@@ -11,30 +52,29 @@
     gap: 10px;
 }
 
-.whispers-settings h3 {
-    margin: 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--SmartThemeBodyColor);
-}
-
 .whispers-settings h4 {
     margin: 8px 0 4px;
     font-size: 0.9em;
     color: var(--SmartThemeBodyColor);
     opacity: 0.8;
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .whispers-settings label {
     font-size: 0.85em;
     color: var(--SmartThemeBodyColor);
     opacity: 0.85;
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .whispers-settings input[type="text"],
 .whispers-settings input[type="number"],
 .whispers-settings input[type="url"],
+.whispers-settings input[type="password"],
 .whispers-settings textarea,
 .whispers-settings select {
     width: 100%;
@@ -61,19 +101,20 @@
     min-height: 60px;
 }
 
-.whispers-settings .whispers-row {
+.whispers-row {
     display: flex;
     gap: 6px;
     align-items: center;
+    flex-wrap: wrap;
 }
 
-.whispers-settings .whispers-row > input,
-.whispers-settings .whispers-row > select {
+.whispers-row>input,
+.whispers-row>select {
     flex: 1;
     min-width: 0;
 }
 
-/* Buttons in settings */
+/* Buttons */
 .whispers-settings .menu_button,
 .whispers-btn-action {
     display: inline-flex;
@@ -108,16 +149,117 @@
     color: #fff !important;
 }
 
-/* Assistant list */
-.whispers-assistant-list {
+.whispers-btn-small {
+    padding: 4px 8px !important;
+    font-size: 0.8em !important;
+}
+
+.whispers-btn-icon {
+    width: 30px;
+    height: 30px;
+    padding: 0 !important;
+    border-radius: 50% !important;
+    flex-shrink: 0;
+}
+
+/* ── Item List (assistants & folders) ───────────────────────── */
+
+.whispers-item-list {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    max-height: 200px;
+    gap: 2px;
+    max-height: 400px;
     overflow-y: auto;
     padding: 4px 0;
 }
 
+.whispers-item-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+.whispers-item-list::-webkit-scrollbar-thumb {
+    background: var(--SmartThemeBorderColor);
+    border-radius: 10px;
+}
+
+/* Folder */
+.whispers-folder {
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 4px;
+}
+
+.whispers-folder-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+}
+
+.whispers-folder-header:hover {
+    background: var(--SmartThemeBlurTintColor);
+}
+
+.whispers-folder-icon {
+    font-size: 16px;
+    width: 24px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.whispers-folder-name {
+    flex: 1;
+    font-size: 0.9em;
+    font-weight: 600;
+    color: var(--SmartThemeBodyColor);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.whispers-folder-count {
+    font-size: 0.75em;
+    opacity: 0.5;
+    color: var(--SmartThemeBodyColor);
+}
+
+.whispers-folder-chevron {
+    font-size: 12px;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.4;
+    transition: transform 0.2s;
+}
+
+.whispers-folder.open .whispers-folder-chevron {
+    transform: rotate(90deg);
+}
+
+.whispers-folder-children {
+    display: none;
+    padding: 2px 6px 6px 20px;
+}
+
+.whispers-folder.open .whispers-folder-children {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+/* Folder edit form */
+.whispers-folder-edit {
+    padding: 8px 10px;
+    border-top: 1px solid var(--SmartThemeBorderColor);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: var(--SmartThemeBlurTintColor);
+}
+
+/* Assistant item */
 .whispers-assistant-item {
     display: flex;
     align-items: center;
@@ -138,7 +280,7 @@
     color: var(--SmartThemeQuoteFontColor, var(--SmartThemeBodyColor));
 }
 
-.whispers-assistant-item .whispers-assistant-avatar {
+.whispers-assistant-avatar {
     width: 32px;
     height: 32px;
     border-radius: 50%;
@@ -147,7 +289,7 @@
     flex-shrink: 0;
 }
 
-.whispers-assistant-item .whispers-assistant-avatar-placeholder {
+.whispers-assistant-avatar-placeholder {
     width: 32px;
     height: 32px;
     border-radius: 50%;
@@ -162,7 +304,7 @@
     background: var(--SmartThemeBlurTintColor);
 }
 
-.whispers-assistant-item .whispers-assistant-name {
+.whispers-assistant-name {
     flex: 1;
     font-size: 0.9em;
     overflow: hidden;
@@ -170,17 +312,113 @@
     white-space: nowrap;
 }
 
-/* Field group */
-.whispers-field-group {
+.whispers-assistant-badges {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.whispers-badge {
+    font-size: 0.7em;
+    opacity: 0.5;
+}
+
+.whispers-assistant-actions {
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.whispers-assistant-item:hover .whispers-assistant-actions {
+    opacity: 1;
+}
+
+.whispers-assistant-actions button {
+    background: transparent;
+    border: none;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    opacity: 0.6;
+    transition: opacity 0.15s, color 0.15s;
+}
+
+.whispers-assistant-actions button:hover {
+    opacity: 1;
+}
+
+.whispers-assistant-actions button.delete-btn:hover {
+    color: #e74c3c;
+}
+
+/* ── Inline Edit Panel ──────────────────────────────────────── */
+
+.whispers-inline-edit {
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: var(--SmartThemeBlurTintColor);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 4px 0;
+    animation: whispers-slide-down 0.2s ease-out;
+}
+
+@keyframes whispers-slide-down {
+    from {
+        opacity: 0;
+        max-height: 0;
+    }
+
+    to {
+        opacity: 1;
+        max-height: 600px;
+    }
+}
+
+.whispers-inline-edit .whispers-field-group {
     display: flex;
     flex-direction: column;
     gap: 4px;
 }
 
-.whispers-field-group label {
+/* Avatar upload */
+.whispers-avatar-upload {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 10px;
+}
+
+.whispers-avatar-preview {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--SmartThemeBorderColor);
+}
+
+.whispers-avatar-preview-placeholder {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 2px dashed var(--SmartThemeBorderColor);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.35;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    background: var(--SmartThemeBlurTintColor);
+}
+
+.whispers-avatar-preview-placeholder:hover {
+    opacity: 0.6;
 }
 
 .whispers-divider {
@@ -190,25 +428,28 @@
     opacity: 0.5;
 }
 
-/* Import/Export row */
-.whispers-io-row {
-    display: flex;
-    gap: 6px;
-}
-
-/* Binding selector */
-.whispers-binding-section {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-/* Toggle switch */
+/* Toggle */
 .whispers-toggle-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+}
+
+/* Hidden inputs */
+.whispers-hidden-input {
+    display: none !important;
+}
+
+/* Model row */
+.whispers-model-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.whispers-model-row select {
+    flex: 1;
 }
 
 /* ── Chat Bar Button ────────────────────────────────────────── */
@@ -234,11 +475,6 @@
     opacity: 1;
     color: var(--SmartThemeQuoteColor);
     transform: scale(1.15);
-}
-
-#whispers-chat-btn.has-unread {
-    color: var(--SmartThemeQuoteColor);
-    opacity: 1;
 }
 
 /* ── Chat Overlay (iOS-style) ───────────────────────────────── */
@@ -340,13 +576,14 @@
     opacity: 0.55;
 }
 
-.whispers-chat-close {
+.whispers-chat-close,
+.whispers-chat-clear {
     width: 32px;
     height: 32px;
     border: none;
     background: transparent;
     color: var(--SmartThemeBodyColor);
-    font-size: 16px;
+    font-size: 14px;
     cursor: pointer;
     border-radius: 50%;
     display: flex;
@@ -356,7 +593,8 @@
     transition: opacity 0.2s, background 0.2s;
 }
 
-.whispers-chat-close:hover {
+.whispers-chat-close:hover,
+.whispers-chat-clear:hover {
     opacity: 1;
     background: var(--SmartThemeBorderColor);
 }
@@ -373,7 +611,6 @@
     scroll-behavior: smooth;
 }
 
-/* Scrollbar */
 .whispers-messages::-webkit-scrollbar {
     width: 5px;
 }
@@ -387,7 +624,6 @@
     border-radius: 10px;
 }
 
-/* Empty state */
 .whispers-empty-state {
     flex: 1;
     display: flex;
@@ -428,13 +664,13 @@
         opacity: 0;
         transform: translateY(8px) scale(0.95);
     }
+
     to {
         opacity: 1;
         transform: translateY(0) scale(1);
     }
 }
 
-/* User messages — right side, use ST theme accent */
 .whispers-msg-user {
     align-self: flex-end;
     background: var(--SmartThemeQuoteColor);
@@ -442,7 +678,6 @@
     border-bottom-right-radius: 6px;
 }
 
-/* Assistant messages — left side, use ST theme tint */
 .whispers-msg-assistant {
     align-self: flex-start;
     background: var(--SmartThemeBlurTintColor);
@@ -496,10 +731,14 @@
 }
 
 @keyframes whispers-typing-bounce {
-    0%, 80%, 100% {
+
+    0%,
+    80%,
+    100% {
         transform: scale(0.8);
         opacity: 0.4;
     }
+
     40% {
         transform: scale(1.2);
         opacity: 0.9;
@@ -571,6 +810,44 @@
     transform: none;
 }
 
+/* ── Folder Themed Children ─────────────────────────────────── */
+
+.whispers-folder-children .whispers-assistant-item {
+    border-left: 3px solid var(--folder-color, var(--SmartThemeBorderColor));
+    border-radius: 0 8px 8px 0;
+    margin-left: 0;
+}
+
+/* ── Author's note in folder ────────────────────────────────── */
+
+.whispers-folder-note {
+    font-size: 0.8em;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.55;
+    padding: 4px 8px;
+    font-style: italic;
+    border-left: 2px solid var(--folder-color, var(--SmartThemeBorderColor));
+    margin-bottom: 4px;
+}
+
+/* ── Color picker row ───────────────────────────────────────── */
+
+.whispers-color-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.whispers-color-row input[type="color"] {
+    width: 32px;
+    height: 32px;
+    border: 2px solid var(--SmartThemeBorderColor);
+    border-radius: 8px;
+    padding: 2px;
+    cursor: pointer;
+    background: transparent;
+}
+
 /* ── Responsive ─────────────────────────────────────────────── */
 
 @media (max-width: 500px) {
@@ -579,140 +856,4 @@
         height: 100vh;
         border-radius: 0;
     }
-}
-
-/* ── Avatar upload area ─────────────────────────────────────── */
-
-.whispers-avatar-upload {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.whispers-avatar-preview {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 2px solid var(--SmartThemeBorderColor);
-}
-
-.whispers-avatar-preview-placeholder {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    border: 2px dashed var(--SmartThemeBorderColor);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-    color: var(--SmartThemeBodyColor);
-    opacity: 0.35;
-    cursor: pointer;
-    transition: opacity 0.2s;
-    background: var(--SmartThemeBlurTintColor);
-}
-
-.whispers-avatar-preview-placeholder:hover {
-    opacity: 0.6;
-}
-
-/* ── No assistant selected state ────────────────────────────── */
-
-.whispers-no-assistant {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    color: var(--SmartThemeBodyColor);
-    opacity: 0.4;
-    text-align: center;
-    padding: 20px;
-}
-
-.whispers-no-assistant i {
-    font-size: 48px;
-}
-
-/* ── Hidden file inputs ─────────────────────────────────────── */
-
-.whispers-hidden-input {
-    display: none !important;
-}
-
-/* ── Prompt template section ────────────────────────────────── */
-
-.whispers-prompt-preview {
-    background: var(--SmartThemeBlurTintColor);
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 8px;
-    padding: 10px 12px;
-    font-size: 0.82em;
-    font-family: monospace;
-    color: var(--SmartThemeBodyColor);
-    opacity: 0.8;
-    white-space: pre-wrap;
-    max-height: 150px;
-    overflow-y: auto;
-}
-
-/* ── Edit form section ──────────────────────────────────────── */
-
-.whispers-edit-section {
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 10px;
-    padding: 12px;
-    background: var(--SmartThemeBlurTintColor);
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.whispers-edit-section.collapsed .whispers-edit-body {
-    display: none;
-}
-
-.whispers-edit-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    cursor: pointer;
-    user-select: none;
-}
-
-.whispers-edit-header h4 {
-    margin: 0 !important;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.whispers-edit-body {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-/* Chat clear button */
-.whispers-chat-clear {
-    width: 32px;
-    height: 32px;
-    border: none;
-    background: transparent;
-    color: var(--SmartThemeBodyColor);
-    font-size: 14px;
-    cursor: pointer;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0.6;
-    transition: opacity 0.2s, background 0.2s;
-}
-
-.whispers-chat-clear:hover {
-    opacity: 1;
-    background: var(--SmartThemeBorderColor);
 }
