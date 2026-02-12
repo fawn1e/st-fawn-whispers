@@ -1049,13 +1049,22 @@ function updateOverlayPanels() {
 
 // ── Twitter Feed Rendering ──────────────────────────────────────
 
+function getUserName() {
+    const ctx = SillyTavern.getContext();
+    return ctx.name1 || 'User';
+}
+
 function renderTwitterFeed() {
     const feed = document.getElementById('whispers-twitter-feed');
     const empty = document.getElementById('whispers-twitter-empty');
     if (!feed) return;
 
     // Clear existing tweets
-    feed.querySelectorAll('.whispers-tweet').forEach(e => e.remove());
+    feed.querySelectorAll('.whispers-tweet-wrap').forEach(e => e.remove());
+    // Also clear old-style tweets (backward compat)
+    feed.querySelectorAll('.whispers-tweet').forEach(e => {
+        if (!e.closest('.whispers-tweet-wrap')) e.remove();
+    });
 
     const posts = getTwitterPosts();
     if (!posts || posts.length === 0) {
@@ -1064,7 +1073,11 @@ function renderTwitterFeed() {
     }
     if (empty) empty.style.display = 'none';
 
-    for (const post of posts) {
+    posts.forEach((post, index) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'whispers-tweet-wrap';
+        wrap.dataset.index = index;
+
         const tweet = document.createElement('div');
         tweet.className = 'whispers-tweet';
 
@@ -1083,11 +1096,197 @@ function renderTwitterFeed() {
                     <span class="whispers-tweet-time">· ${timeAgo}</span>
                 </div>
                 <div class="whispers-tweet-text">${escapeHtml(post.content || '')}</div>
+                <div class="whispers-tweet-actions">
+                    <button class="whispers-tweet-reply-btn" title="Reply"><i class="fa-solid fa-reply"></i></button>
+                </div>
             </div>
         `;
-        feed.appendChild(tweet);
+
+        // Reply button handler
+        tweet.querySelector('.whispers-tweet-reply-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            showReplyInput(wrap, post, index);
+        });
+
+        wrap.appendChild(tweet);
+
+        // Render existing replies
+        if (post.replies && post.replies.length > 0) {
+            for (const reply of post.replies) {
+                wrap.appendChild(buildReplyElement(reply));
+            }
+        }
+
+        feed.appendChild(wrap);
+    });
+}
+
+function buildReplyElement(reply) {
+    const el = document.createElement('div');
+    el.className = 'whispers-tweet whispers-tweet-reply';
+
+    const isUser = reply.isUser;
+    const avatarHtml = reply.avatar
+        ? `<img class="whispers-tweet-avatar" src="${reply.avatar}" alt="">`
+        : `<div class="whispers-tweet-avatar whispers-tweet-avatar-placeholder"><i class="fa-solid ${isUser ? 'fa-user-pen' : 'fa-user'}"></i></div>`;
+
+    const timeAgo = reply.timestamp ? getTimeAgo(reply.timestamp) : 'now';
+
+    el.innerHTML = `
+        ${avatarHtml}
+        <div class="whispers-tweet-body">
+            <div class="whispers-tweet-header">
+                <span class="whispers-tweet-name">${escapeHtml(reply.name || 'Anon')}</span>
+                <span class="whispers-tweet-username">@${escapeHtml(reply.username || 'user')}</span>
+                <span class="whispers-tweet-time">· ${timeAgo}</span>
+            </div>
+            <div class="whispers-tweet-text">${escapeHtml(reply.content || '')}</div>
+        </div>
+    `;
+    return el;
+}
+
+function showReplyInput(wrapEl, post, postIndex) {
+    // Don't show if already visible
+    if (wrapEl.querySelector('.whispers-tweet-reply-input')) return;
+
+    const userName = getUserName();
+    const inputWrap = document.createElement('div');
+    inputWrap.className = 'whispers-tweet-reply-input';
+    inputWrap.innerHTML = `
+        <div class="whispers-tweet-reply-input-row">
+            <span class="whispers-tweet-reply-as"><i class="fa-solid fa-user-pen"></i> ${escapeHtml(userName)}</span>
+            <textarea class="whispers-tweet-reply-field" placeholder="Write a reply..." rows="1"></textarea>
+            <button class="whispers-tweet-reply-send" title="Send reply"><i class="fa-solid fa-paper-plane"></i></button>
+        </div>
+    `;
+
+    const textarea = inputWrap.querySelector('.whispers-tweet-reply-field');
+    const sendBtn = inputWrap.querySelector('.whispers-tweet-reply-send');
+
+    // Auto-resize
+    textarea.addEventListener('input', () => {
+        textarea.style.height = 'auto';
+        textarea.style.height = textarea.scrollHeight + 'px';
+    });
+
+    // Send on Enter (no shift)
+    textarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            submitReply();
+        }
+    });
+
+    sendBtn.addEventListener('click', submitReply);
+
+    async function submitReply() {
+        const text = textarea.value.trim();
+        if (!text) return;
+
+        sendBtn.disabled = true;
+        textarea.disabled = true;
+
+        // Add user reply to posts
+        const posts = getTwitterPosts();
+        if (!posts[postIndex]) return;
+        if (!posts[postIndex].replies) posts[postIndex].replies = [];
+
+        const userReply = {
+            name: userName,
+            username: userName.toLowerCase().replace(/\s+/g, '_'),
+            content: text,
+            isUser: true,
+            timestamp: Date.now(),
+        };
+        posts[postIndex].replies.push(userReply);
+        setTwitterPosts(posts);
+
+        // Remove input, render user reply
+        inputWrap.remove();
+        wrapEl.appendChild(buildReplyElement(userReply));
+
+        // Now generate NPC reaction
+        await generateTweetReply(post, userReply, postIndex, wrapEl);
+    }
+
+    wrapEl.appendChild(inputWrap);
+    textarea.focus();
+}
+
+async function generateTweetReply(originalPost, userReply, postIndex, wrapEl) {
+    const s = getSettings();
+    if (!s.enabled) return;
+
+    // Find the NPC who made the original post
+    const activeNpcs = getActiveNpcs();
+    const npc = activeNpcs.find(n =>
+        n.username.toLowerCase() === (originalPost.username || '').toLowerCase() ||
+        n.name.toLowerCase() === (originalPost.name || '').toLowerCase()
+    );
+
+    let npcContext = '';
+    if (npc) {
+        npcContext = `You are ${npc.name} (@${npc.username}).`;
+        if (npc.character) npcContext += ` Character: ${npc.character}.`;
+        if (npc.postExample) npcContext += ` Example of your style: "${npc.postExample}".`;
+        if (npc.bans) npcContext += ` Never say: ${npc.bans}.`;
+    } else {
+        npcContext = `You are ${originalPost.name} (@${originalPost.username}), a social media user.`;
+    }
+
+    const prompt = `${npcContext}
+
+You wrote this post on social media:
+"${originalPost.content}"
+
+A user named ${userReply.name} (@${userReply.username}) just replied to your post:
+"${userReply.content}"
+
+Write a SHORT reply back to them (1-3 sentences). Stay in character. Be reactive — if they're being rude, you can be sassy or upset. If they're nice, be friendly. React naturally and emotionally. Do NOT use any JSON formatting, just write the reply text directly.`;
+
+    try {
+        // Show loading indicator
+        const loader = document.createElement('div');
+        loader.className = 'whispers-tweet-reply-loading';
+        loader.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> typing...';
+        wrapEl.appendChild(loader);
+
+        const messages = [{ role: 'system', content: prompt }];
+        const responseText = await callApi(messages);
+
+        loader.remove();
+
+        // Clean response
+        const cleanReply = responseText.trim().replace(/^["']|["']$/g, '');
+
+        if (cleanReply) {
+            const npcReplyData = {
+                name: originalPost.name,
+                username: originalPost.username,
+                content: cleanReply,
+                avatar: originalPost.avatar || (npc?.avatar || null),
+                isUser: false,
+                timestamp: Date.now(),
+            };
+
+            // Save to posts
+            const posts = getTwitterPosts();
+            if (posts[postIndex]) {
+                if (!posts[postIndex].replies) posts[postIndex].replies = [];
+                posts[postIndex].replies.push(npcReplyData);
+                setTwitterPosts(posts);
+            }
+
+            // Render
+            wrapEl.appendChild(buildReplyElement(npcReplyData));
+        }
+    } catch (err) {
+        console.error('[Whispers] Tweet reply error:', err);
+        toastr.error(`Reply failed: ${err.message}`);
     }
 }
+
 
 function getTimeAgo(timestamp) {
     const diff = Date.now() - timestamp;
