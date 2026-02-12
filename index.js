@@ -1,5 +1,7 @@
 /* ============================================================
    Whispers — AI Assistant Extension for SillyTavern
+   v2: folders, inline editing, per-assistant binding,
+       API key + model selector, collapsible panel
    ============================================================ */
 
 const MODULE_NAME = 'whispers';
@@ -8,10 +10,11 @@ const MODULE_NAME = 'whispers';
 const defaultSettings = Object.freeze({
     enabled: true,
     assistants: [],
+    folders: [],
     extraApiUrl: '',
+    extraApiKey: '',
+    extraApiModel: '',
     messageLimit: 20,
-    globalAssistantId: '',
-    characterBindings: {},
     useExtraApi: false,
     mainPromptTemplate: `You are a personal assistant in a chat application. Respond concisely and helpfully. Format your response as plain text.
 
@@ -27,6 +30,7 @@ Now respond to the user's message in the assistant chat.`,
 });
 
 // ── Helpers ─────────────────────────────────────────────────────
+
 function generateId() {
     return 'w_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
 }
@@ -46,8 +50,7 @@ function getSettings() {
 }
 
 function saveSettings() {
-    const { saveSettingsDebounced } = SillyTavern.getContext();
-    saveSettingsDebounced();
+    SillyTavern.getContext().saveSettingsDebounced();
 }
 
 function getChatMeta() {
@@ -55,8 +58,7 @@ function getChatMeta() {
 }
 
 async function saveChatMeta() {
-    const { saveMetadata } = SillyTavern.getContext();
-    await saveMetadata();
+    await SillyTavern.getContext().saveMetadata();
 }
 
 function getWhispersHistory() {
@@ -74,252 +76,212 @@ function getCurrentCharName() {
     return null;
 }
 
-/** Determine which assistant to use (chat > character > global) */
+function escapeHtml(text) {
+    const d = document.createElement('div');
+    d.textContent = text;
+    return d.innerHTML;
+}
+
+// ── Assistant Model ─────────────────────────────────────────────
+// Each assistant: { id, name, character, bans, avatar, binding, bindingTarget, folderId }
+// binding: 'global' | 'character' | 'chat' | 'none'
+// bindingTarget: charName (for character binding) or null
+
 function getActiveAssistant() {
     const settings = getSettings();
     const meta = getChatMeta();
+    const charName = getCurrentCharName();
 
-    // 1. Per-chat binding
+    // 1. Chat-bound assistant
     if (meta && meta.whispers_assistant_id) {
         const a = settings.assistants.find(a => a.id === meta.whispers_assistant_id);
         if (a) return a;
     }
 
-    // 2. Per-character binding
-    const charName = getCurrentCharName();
-    if (charName && settings.characterBindings[charName]) {
-        const a = settings.assistants.find(a => a.id === settings.characterBindings[charName]);
+    // 2. Character-bound
+    if (charName) {
+        const a = settings.assistants.find(a => a.binding === 'character' && a.bindingTarget === charName);
         if (a) return a;
     }
 
     // 3. Global
-    if (settings.globalAssistantId) {
-        const a = settings.assistants.find(a => a.id === settings.globalAssistantId);
-        if (a) return a;
-    }
+    const g = settings.assistants.find(a => a.binding === 'global');
+    if (g) return g;
 
     // 4. First available
     return settings.assistants.length > 0 ? settings.assistants[0] : null;
 }
 
-/** Build the system prompt from template + assistant data */
 function buildSystemPrompt(assistant) {
     const settings = getSettings();
     let prompt = settings.mainPromptTemplate;
-
     prompt = prompt.replace(/\{\{name\}\}/g, assistant.name || 'Assistant');
     prompt = prompt.replace(/\{\{character\}\}/g, assistant.character || 'Helpful and friendly');
     prompt = prompt.replace(/\{\{bans\}\}/g, assistant.bans || 'None');
 
-    // Inject recent main chat messages as context
     const ctx = SillyTavern.getContext();
     const chat = ctx.chat || [];
     const limit = settings.messageLimit || 20;
-    const recentMessages = chat.slice(-limit);
-    const contextStr = recentMessages.map(m => {
+    const contextStr = chat.slice(-limit).map(m => {
         const role = m.is_user ? 'User' : (m.name || 'Character');
         return `${role}: ${m.mes}`;
     }).join('\n');
-
     prompt = prompt.replace(/\{\{context\}\}/g, contextStr);
 
     return prompt;
 }
 
-// ── PNG Import/Export (tEXt chunk steganography) ────────────────
+// ── PNG Import/Export ───────────────────────────────────────────
 
-/** Encode assistant data into a PNG as a tEXt chunk */
 async function exportAssistantToPng(assistant) {
-    // Create a canvas with the avatar or a default image
     const canvas = document.createElement('canvas');
-    canvas.width = 400;
-    canvas.height = 400;
-    const cCtx = canvas.getContext('2d');
-
+    canvas.width = 400; canvas.height = 400;
+    const c = canvas.getContext('2d');
     if (assistant.avatar) {
         const img = new Image();
-        await new Promise((resolve, reject) => {
-            img.onload = resolve;
-            img.onerror = reject;
-            img.src = assistant.avatar;
-        });
-        cCtx.drawImage(img, 0, 0, 400, 400);
+        await new Promise((r, e) => { img.onload = r; img.onerror = e; img.src = assistant.avatar; });
+        c.drawImage(img, 0, 0, 400, 400);
     } else {
-        // Gradient background
-        const grad = cCtx.createLinearGradient(0, 0, 400, 400);
-        grad.addColorStop(0, '#667eea');
-        grad.addColorStop(1, '#764ba2');
-        cCtx.fillStyle = grad;
-        cCtx.fillRect(0, 0, 400, 400);
-        // Name text
-        cCtx.fillStyle = '#fff';
-        cCtx.font = 'bold 48px sans-serif';
-        cCtx.textAlign = 'center';
-        cCtx.textBaseline = 'middle';
-        cCtx.fillText(assistant.name || 'Assistant', 200, 180);
-        cCtx.font = '24px sans-serif';
-        cCtx.globalAlpha = 0.7;
-        cCtx.fillText('Whispers Assistant', 200, 240);
-        cCtx.globalAlpha = 1;
+        const g = c.createLinearGradient(0, 0, 400, 400);
+        g.addColorStop(0, '#667eea'); g.addColorStop(1, '#764ba2');
+        c.fillStyle = g; c.fillRect(0, 0, 400, 400);
+        c.fillStyle = '#fff'; c.font = 'bold 48px sans-serif';
+        c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillText(assistant.name || 'Assistant', 200, 180);
+        c.font = '24px sans-serif'; c.globalAlpha = 0.7;
+        c.fillText('Whispers', 200, 240); c.globalAlpha = 1;
     }
-
-    // Get the raw PNG bytes
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-    const arrayBuf = await blob.arrayBuffer();
-    const pngBytes = new Uint8Array(arrayBuf);
-
-    // Inject tEXt chunk with assistant data
-    const exportData = {
-        name: assistant.name,
-        character: assistant.character,
-        bans: assistant.bans,
-        avatar: assistant.avatar || null,
-    };
-    const jsonStr = JSON.stringify(exportData);
-    const withChunk = injectTextChunk(pngBytes, 'whispers', jsonStr);
-
-    // Download
-    const dlBlob = new Blob([withChunk], { type: 'image/png' });
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+    const pngBytes = new Uint8Array(await blob.arrayBuffer());
+    const data = { name: assistant.name, character: assistant.character, bans: assistant.bans, avatar: assistant.avatar || null };
+    const result = injectTextChunk(pngBytes, 'whispers', JSON.stringify(data));
+    const dlBlob = new Blob([result], { type: 'image/png' });
     const url = URL.createObjectURL(dlBlob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `${assistant.name || 'assistant'}.png`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    a.href = url; a.download = `${assistant.name || 'assistant'}.png`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
 }
 
-/** Import assistant from a PNG file */
 async function importAssistantFromPng(file) {
-    const arrayBuf = await file.arrayBuffer();
-    const pngBytes = new Uint8Array(arrayBuf);
+    const pngBytes = new Uint8Array(await file.arrayBuffer());
     const jsonStr = extractTextChunk(pngBytes, 'whispers');
-
-    if (!jsonStr) {
-        toastr.error('This PNG does not contain Whispers assistant data.');
-        return null;
-    }
-
+    if (!jsonStr) { toastr.error('This PNG does not contain Whispers data.'); return null; }
     try {
-        const data = JSON.parse(jsonStr);
+        const d = JSON.parse(jsonStr);
+        return { id: generateId(), name: d.name || 'Imported', character: d.character || '', bans: d.bans || '', avatar: d.avatar || null, binding: 'none', bindingTarget: null, folderId: null };
+    } catch { toastr.error('Failed to parse assistant data.'); return null; }
+}
+
+// Folder export: exports folder + all its assistants
+async function exportFolderToPng(folder, assistants) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 400; canvas.height = 400;
+    const c = canvas.getContext('2d');
+    const g = c.createLinearGradient(0, 0, 400, 400);
+    g.addColorStop(0, folder.color || '#667eea');
+    g.addColorStop(1, '#222');
+    c.fillStyle = g; c.fillRect(0, 0, 400, 400);
+    c.fillStyle = '#fff'; c.font = 'bold 40px sans-serif';
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(folder.name || 'Folder', 200, 180);
+    c.font = '20px sans-serif'; c.globalAlpha = 0.6;
+    c.fillText(`${assistants.length} assistant(s)`, 200, 230);
+    c.globalAlpha = 1;
+
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+    const pngBytes = new Uint8Array(await blob.arrayBuffer());
+    const data = {
+        type: 'folder',
+        folder: { name: folder.name, icon: folder.icon, color: folder.color, note: folder.note },
+        assistants: assistants.map(a => ({ name: a.name, character: a.character, bans: a.bans, avatar: a.avatar })),
+    };
+    const result = injectTextChunk(pngBytes, 'whispers', JSON.stringify(data));
+    const dlBlob = new Blob([result], { type: 'image/png' });
+    const url = URL.createObjectURL(dlBlob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${folder.name || 'folder'}.png`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+async function importFromPng(file) {
+    const pngBytes = new Uint8Array(await file.arrayBuffer());
+    const jsonStr = extractTextChunk(pngBytes, 'whispers');
+    if (!jsonStr) { toastr.error('No Whispers data in this PNG.'); return null; }
+    try {
+        const d = JSON.parse(jsonStr);
+        if (d.type === 'folder') {
+            return { type: 'folder', data: d };
+        }
+        // Single assistant
         return {
-            id: generateId(),
-            name: data.name || 'Imported Assistant',
-            character: data.character || '',
-            bans: data.bans || '',
-            avatar: data.avatar || null,
+            type: 'assistant',
+            data: { id: generateId(), name: d.name || 'Imported', character: d.character || '', bans: d.bans || '', avatar: d.avatar || null, binding: 'none', bindingTarget: null, folderId: null }
         };
-    } catch (e) {
-        toastr.error('Failed to parse assistant data from PNG.');
-        return null;
-    }
+    } catch { toastr.error('Failed to parse data.'); return null; }
 }
 
-/** Inject a tEXt chunk into PNG bytes */
+// ── PNG chunk utilities ─────────────────────────────────────────
+
 function injectTextChunk(pngBytes, keyword, text) {
-    // PNG structure: 8-byte signature, then chunks
-    // We'll insert our tEXt chunk before IEND
-    const encoder = new TextEncoder();
-    const keywordBytes = encoder.encode(keyword);
-    const textBytes = encoder.encode(text);
-
-    // tEXt chunk data: keyword + null byte + text
-    const chunkData = new Uint8Array(keywordBytes.length + 1 + textBytes.length);
-    chunkData.set(keywordBytes, 0);
-    chunkData[keywordBytes.length] = 0; // null separator
-    chunkData.set(textBytes, keywordBytes.length + 1);
-
-    // Build the chunk: length (4) + type (4) + data + CRC (4)
-    const chunkType = encoder.encode('tEXt');
-    const chunkLength = chunkData.length;
-
-    // Calculate CRC over type + data
-    const crcInput = new Uint8Array(4 + chunkData.length);
-    crcInput.set(chunkType, 0);
-    crcInput.set(chunkData, 4);
-    const crc = crc32(crcInput);
-
-    const chunk = new Uint8Array(4 + 4 + chunkData.length + 4);
-    const view = new DataView(chunk.buffer);
-    view.setUint32(0, chunkLength);
-    chunk.set(chunkType, 4);
-    chunk.set(chunkData, 8);
-    view.setUint32(chunk.length - 4, crc);
-
-    // Find IEND position
-    const iendPos = findChunkPosition(pngBytes, 'IEND');
-    if (iendPos === -1) {
-        // Fallback: append before last 12 bytes (IEND chunk)
-        const result = new Uint8Array(pngBytes.length + chunk.length);
-        result.set(pngBytes.subarray(0, pngBytes.length - 12), 0);
-        result.set(chunk, pngBytes.length - 12);
-        result.set(pngBytes.subarray(pngBytes.length - 12), pngBytes.length - 12 + chunk.length);
-        return result;
-    }
-
-    const result = new Uint8Array(pngBytes.length + chunk.length);
-    result.set(pngBytes.subarray(0, iendPos), 0);
-    result.set(chunk, iendPos);
-    result.set(pngBytes.subarray(iendPos), iendPos + chunk.length);
-    return result;
+    const enc = new TextEncoder();
+    const kw = enc.encode(keyword), tx = enc.encode(text);
+    const chunkData = new Uint8Array(kw.length + 1 + tx.length);
+    chunkData.set(kw); chunkData[kw.length] = 0; chunkData.set(tx, kw.length + 1);
+    const ct = enc.encode('tEXt');
+    const crcIn = new Uint8Array(4 + chunkData.length);
+    crcIn.set(ct); crcIn.set(chunkData, 4);
+    const chunk = new Uint8Array(12 + chunkData.length);
+    const v = new DataView(chunk.buffer);
+    v.setUint32(0, chunkData.length);
+    chunk.set(ct, 4); chunk.set(chunkData, 8);
+    v.setUint32(chunk.length - 4, crc32(crcIn));
+    const iend = findChunkPos(pngBytes, 'IEND');
+    const pos = iend !== -1 ? iend : pngBytes.length - 12;
+    const out = new Uint8Array(pngBytes.length + chunk.length);
+    out.set(pngBytes.subarray(0, pos));
+    out.set(chunk, pos);
+    out.set(pngBytes.subarray(pos), pos + chunk.length);
+    return out;
 }
 
-/** Extract a tEXt chunk value from PNG bytes */
 function extractTextChunk(pngBytes, keyword) {
-    const decoder = new TextDecoder();
-    let offset = 8; // Skip PNG signature
-
-    while (offset < pngBytes.length) {
-        const view = new DataView(pngBytes.buffer, pngBytes.byteOffset + offset);
-        const length = view.getUint32(0);
-        const type = decoder.decode(pngBytes.subarray(offset + 4, offset + 8));
-
+    const dec = new TextDecoder();
+    let off = 8;
+    while (off < pngBytes.length) {
+        const v = new DataView(pngBytes.buffer, pngBytes.byteOffset + off);
+        const len = v.getUint32(0);
+        const type = dec.decode(pngBytes.subarray(off + 4, off + 8));
         if (type === 'tEXt') {
-            const data = pngBytes.subarray(offset + 8, offset + 8 + length);
-            // Find null separator
-            let nullIdx = -1;
-            for (let i = 0; i < data.length; i++) {
-                if (data[i] === 0) { nullIdx = i; break; }
-            }
-            if (nullIdx > 0) {
-                const key = decoder.decode(data.subarray(0, nullIdx));
-                if (key === keyword) {
-                    return decoder.decode(data.subarray(nullIdx + 1));
-                }
+            const data = pngBytes.subarray(off + 8, off + 8 + len);
+            let ni = -1;
+            for (let i = 0; i < data.length; i++) { if (data[i] === 0) { ni = i; break; } }
+            if (ni > 0 && dec.decode(data.subarray(0, ni)) === keyword) {
+                return dec.decode(data.subarray(ni + 1));
             }
         }
-
         if (type === 'IEND') break;
-        offset += 12 + length; // 4 length + 4 type + data + 4 CRC
+        off += 12 + len;
     }
     return null;
 }
 
-/** Find the byte position of a named chunk in PNG */
-function findChunkPosition(pngBytes, chunkName) {
-    const decoder = new TextDecoder();
-    let offset = 8;
-    while (offset < pngBytes.length) {
-        const view = new DataView(pngBytes.buffer, pngBytes.byteOffset + offset);
-        const length = view.getUint32(0);
-        const type = decoder.decode(pngBytes.subarray(offset + 4, offset + 8));
-        if (type === chunkName) return offset;
-        offset += 12 + length;
+function findChunkPos(png, name) {
+    const d = new TextDecoder(); let o = 8;
+    while (o < png.length) {
+        const v = new DataView(png.buffer, png.byteOffset + o);
+        const l = v.getUint32(0);
+        if (d.decode(png.subarray(o + 4, o + 8)) === name) return o;
+        o += 12 + l;
     }
     return -1;
 }
 
-/** CRC32 for PNG chunks */
 function crc32(buf) {
-    let crc = 0xFFFFFFFF;
-    for (let i = 0; i < buf.length; i++) {
-        crc ^= buf[i];
-        for (let j = 0; j < 8; j++) {
-            crc = (crc >>> 1) ^ (crc & 1 ? 0xEDB88320 : 0);
-        }
-    }
-    return (crc ^ 0xFFFFFFFF) >>> 0;
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < buf.length; i++) { c ^= buf[i]; for (let j = 0; j < 8; j++) c = (c >>> 1) ^ (c & 1 ? 0xEDB88320 : 0); }
+    return (c ^ 0xFFFFFFFF) >>> 0;
 }
 
 // ── Generation ──────────────────────────────────────────────────
@@ -330,202 +292,155 @@ async function generateResponse(userMessage) {
     if (!assistant) throw new Error('No assistant configured');
 
     const systemPrompt = buildSystemPrompt(assistant);
-
-    // Build conversation from whispers history
     const history = getWhispersHistory();
     const limit = settings.messageLimit || 20;
     const recentHistory = history.slice(-limit);
 
     if (settings.useExtraApi && settings.extraApiUrl) {
-        return await generateViaExtraApi(systemPrompt, recentHistory, userMessage, settings.extraApiUrl);
+        return await generateViaExtraApi(systemPrompt, recentHistory, userMessage, settings);
     } else {
-        return await generateViaSillyTavern(systemPrompt, recentHistory, userMessage);
+        return await generateViaST(systemPrompt, recentHistory, userMessage);
     }
 }
 
-async function generateViaExtraApi(systemPrompt, history, userMessage, apiUrl) {
-    // Build messages array
-    const messages = [
-        { role: 'system', content: systemPrompt },
-    ];
-    for (const msg of history) {
-        messages.push({
-            role: msg.role === 'user' ? 'user' : 'assistant',
-            content: msg.content,
-        });
-    }
+async function generateViaExtraApi(systemPrompt, history, userMessage, settings) {
+    const messages = [{ role: 'system', content: systemPrompt }];
+    for (const m of history) messages.push({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content });
     messages.push({ role: 'user', content: userMessage });
 
-    try {
-        const url = new URL(apiUrl);
-        if (!url.pathname.endsWith('/generate') && !url.pathname.endsWith('/chat/completions')) {
-            url.pathname = url.pathname.replace(/\/$/, '') + '/v1/chat/completions';
-        }
-
-        const response = await fetch(url.toString(), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                messages: messages,
-                temperature: 0.7,
-                max_tokens: 1024,
-            }),
-        });
-
-        if (!response.ok) {
-            throw new Error(`API error: ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        // Support OpenAI-compatible format
-        if (data.choices && data.choices.length > 0) {
-            return data.choices[0].message?.content || data.choices[0].text || '';
-        }
-        // Fallback formats
-        if (data.response) return data.response;
-        if (data.content) return data.content;
-        if (data.result) return data.result;
-
-        return JSON.stringify(data);
-    } catch (err) {
-        console.error('[Whispers] Extra API error:', err);
-        throw err;
+    const url = new URL(settings.extraApiUrl);
+    if (!url.pathname.endsWith('/generate') && !url.pathname.endsWith('/chat/completions')) {
+        url.pathname = url.pathname.replace(/\/$/, '') + '/v1/chat/completions';
     }
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (settings.extraApiKey) headers['Authorization'] = `Bearer ${settings.extraApiKey}`;
+
+    const body = { messages, temperature: 0.7, max_tokens: 1024 };
+    if (settings.extraApiModel) body.model = settings.extraApiModel;
+
+    const resp = await fetch(url.toString(), { method: 'POST', headers, body: JSON.stringify(body) });
+    if (!resp.ok) throw new Error(`API error: ${resp.status}`);
+    const data = await resp.json();
+
+    if (data.choices?.length > 0) return data.choices[0].message?.content || data.choices[0].text || '';
+    return data.response || data.content || data.result || JSON.stringify(data);
 }
 
-async function generateViaSillyTavern(systemPrompt, history, userMessage) {
+async function generateViaST(systemPrompt, history, userMessage) {
     const { generateRaw } = SillyTavern.getContext();
-
-    // Build prompt from history
-    let conversationStr = '';
-    for (const msg of history) {
-        const role = msg.role === 'user' ? 'User' : 'Assistant';
-        conversationStr += `${role}: ${msg.content}\n`;
-    }
-    conversationStr += `User: ${userMessage}\nAssistant:`;
-
-    const result = await generateRaw({
-        systemPrompt: systemPrompt,
-        prompt: conversationStr,
-        prefill: '',
-    });
-
-    return result || '';
+    let conv = '';
+    for (const m of history) conv += `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}\n`;
+    conv += `User: ${userMessage}\nAssistant:`;
+    return (await generateRaw({ systemPrompt, prompt: conv, prefill: '' })) || '';
 }
 
-// ── UI Building ─────────────────────────────────────────────────
+// ── Fetch Models ────────────────────────────────────────────────
+
+async function fetchModels() {
+    const settings = getSettings();
+    if (!settings.extraApiUrl) { toastr.warning('Set API URL first'); return []; }
+
+    const url = new URL(settings.extraApiUrl);
+    url.pathname = url.pathname.replace(/\/$/, '') + '/v1/models';
+
+    const headers = {};
+    if (settings.extraApiKey) headers['Authorization'] = `Bearer ${settings.extraApiKey}`;
+
+    try {
+        const resp = await fetch(url.toString(), { headers });
+        if (!resp.ok) throw new Error(`${resp.status}`);
+        const data = await resp.json();
+        return (data.data || data.models || []).map(m => m.id || m.name || m);
+    } catch (err) {
+        toastr.error(`Failed to fetch models: ${err.message}`);
+        return [];
+    }
+}
+
+// ── State ───────────────────────────────────────────────────────
+
+let editingAssistantId = null;
+let editingFolderId = null;
+let isGenerating = false;
+let panelCollapsed = false;
+
+// ── UI: Settings Panel HTML ─────────────────────────────────────
 
 function buildSettingsHtml() {
     return `
     <div class="whispers-settings" id="whispers-settings-panel">
-        <h3>
-            <i class="fa-solid fa-ghost"></i>
-            <span data-i18n="Whispers">Whispers</span>
-        </h3>
-        <div class="whispers-divider"></div>
-
-        <!-- Assistant List -->
-        <h4><i class="fa-solid fa-users"></i> Assistants</h4>
-        <div class="whispers-assistant-list" id="whispers-assistant-list"></div>
-        <div class="whispers-row">
-            <button class="menu_button" id="whispers-btn-new" title="Create new assistant">
-                <i class="fa-solid fa-plus"></i> New
-            </button>
-            <button class="menu_button" id="whispers-btn-import" title="Import from PNG">
-                <i class="fa-solid fa-file-import"></i> Import
-            </button>
+        <div class="whispers-extension-header" id="whispers-panel-toggle">
+            <h3>
+                <i class="fa-solid fa-ghost"></i>
+                <span>Whispers</span>
+            </h3>
+            <i class="fa-solid fa-chevron-down whispers-collapse-icon"></i>
         </div>
-        <input type="file" accept=".png" class="whispers-hidden-input" id="whispers-import-file">
+        <div class="whispers-extension-body" id="whispers-panel-body">
 
-        <div class="whispers-divider"></div>
-
-        <!-- Edit Section -->
-        <div class="whispers-edit-section" id="whispers-edit-section" style="display:none;">
-            <div class="whispers-edit-header" id="whispers-edit-toggle">
-                <h4><i class="fa-solid fa-pen-to-square"></i> Edit Assistant</h4>
-                <i class="fa-solid fa-chevron-down"></i>
+            <!-- Assistants & Folders -->
+            <h4><i class="fa-solid fa-users"></i> Assistants</h4>
+            <div class="whispers-item-list" id="whispers-item-list"></div>
+            <div class="whispers-row">
+                <button class="menu_button" id="whispers-btn-new-assistant" title="New assistant">
+                    <i class="fa-solid fa-plus"></i> Assistant
+                </button>
+                <button class="menu_button" id="whispers-btn-new-folder" title="New folder">
+                    <i class="fa-solid fa-folder-plus"></i> Folder
+                </button>
+                <button class="menu_button" id="whispers-btn-import" title="Import PNG">
+                    <i class="fa-solid fa-file-import"></i> Import
+                </button>
             </div>
-            <div class="whispers-edit-body" id="whispers-edit-body">
-                <div class="whispers-avatar-upload">
-                    <div class="whispers-avatar-preview-placeholder" id="whispers-edit-avatar" title="Click to set avatar">
-                        <i class="fa-solid fa-image"></i>
+            <input type="file" accept=".png" class="whispers-hidden-input" id="whispers-import-file">
+            <input type="file" accept="image/*" class="whispers-hidden-input" id="whispers-avatar-file">
+
+            <div class="whispers-divider"></div>
+
+            <!-- API Settings -->
+            <h4><i class="fa-solid fa-server"></i> API Settings</h4>
+            <div class="whispers-toggle-row">
+                <label><i class="fa-solid fa-plug"></i> Use External API</label>
+                <input type="checkbox" id="whispers-use-extra-api">
+            </div>
+            <div id="whispers-api-section" style="display:none;">
+                <div class="whispers-field-group" style="margin-bottom:6px;">
+                    <label>API URL</label>
+                    <input type="url" id="whispers-api-url" placeholder="http://localhost:5001">
+                </div>
+                <div class="whispers-field-group" style="margin-bottom:6px;">
+                    <label><i class="fa-solid fa-key"></i> API Key</label>
+                    <input type="password" id="whispers-api-key" placeholder="sk-... (optional)">
+                </div>
+                <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-microchip"></i> Model</label>
+                    <div class="whispers-model-row">
+                        <select id="whispers-model-select">
+                            <option value="">Default</option>
+                        </select>
+                        <button class="menu_button whispers-btn-small whispers-btn-icon" id="whispers-btn-refresh-models" title="Refresh models">
+                            <i class="fa-solid fa-arrows-rotate"></i>
+                        </button>
                     </div>
-                    <input type="file" accept="image/*" class="whispers-hidden-input" id="whispers-avatar-file">
-                    <span style="font-size:0.8em;opacity:0.6;">Click to set avatar</span>
-                </div>
-                <div class="whispers-field-group">
-                    <label><i class="fa-solid fa-signature"></i> Name</label>
-                    <input type="text" id="whispers-edit-name" placeholder="Assistant name">
-                </div>
-                <div class="whispers-field-group">
-                    <label><i class="fa-solid fa-masks-theater"></i> Character</label>
-                    <textarea id="whispers-edit-character" placeholder="Describe the personality of the assistant..."></textarea>
-                </div>
-                <div class="whispers-field-group">
-                    <label><i class="fa-solid fa-ban"></i> Bans</label>
-                    <textarea id="whispers-edit-bans" placeholder="Things the assistant would never say..."></textarea>
-                </div>
-                <div class="whispers-row">
-                    <button class="menu_button" id="whispers-btn-save">
-                        <i class="fa-solid fa-floppy-disk"></i> Save
-                    </button>
-                    <button class="menu_button" id="whispers-btn-export" title="Export as PNG">
-                        <i class="fa-solid fa-file-export"></i> Export PNG
-                    </button>
-                    <button class="menu_button whispers-btn-danger" id="whispers-btn-delete">
-                        <i class="fa-solid fa-trash"></i> Delete
-                    </button>
                 </div>
             </div>
-        </div>
 
-        <div class="whispers-divider"></div>
-
-        <!-- Binding -->
-        <h4><i class="fa-solid fa-link"></i> Binding</h4>
-        <div class="whispers-binding-section">
             <div class="whispers-field-group">
-                <label>Scope</label>
-                <select id="whispers-binding-scope">
-                    <option value="global">Global (all chats)</option>
-                    <option value="character">Per Character</option>
-                    <option value="chat">This Chat Only</option>
-                </select>
+                <label><i class="fa-solid fa-list-ol"></i> Message Limit (context)</label>
+                <input type="number" id="whispers-msg-limit" min="1" max="100" value="20">
             </div>
-            <button class="menu_button" id="whispers-btn-bind">
-                <i class="fa-solid fa-link"></i> Bind Selected
-            </button>
-        </div>
 
-        <div class="whispers-divider"></div>
+            <div class="whispers-divider"></div>
 
-        <!-- API Settings -->
-        <h4><i class="fa-solid fa-server"></i> API Settings</h4>
-        <div class="whispers-toggle-row">
-            <label><i class="fa-solid fa-plug"></i> Use External API</label>
-            <input type="checkbox" id="whispers-use-extra-api">
-        </div>
-        <div class="whispers-field-group" id="whispers-api-url-group">
-            <label>API URL</label>
-            <input type="url" id="whispers-api-url" placeholder="http://localhost:5001">
-        </div>
-        <div class="whispers-field-group">
-            <label><i class="fa-solid fa-list-ol"></i> Message Limit (context)</label>
-            <input type="number" id="whispers-msg-limit" min="1" max="100" value="20">
-        </div>
-
-        <div class="whispers-divider"></div>
-
-        <!-- Prompt Template -->
-        <h4><i class="fa-solid fa-scroll"></i> Prompt Template</h4>
-        <div class="whispers-field-group">
-            <textarea id="whispers-prompt-template" rows="6" placeholder="Main prompt template..."></textarea>
-            <span style="font-size:0.75em;opacity:0.5;">
-                Variables: {{name}}, {{character}}, {{bans}}, {{context}}
-            </span>
+            <!-- Prompt Template -->
+            <h4><i class="fa-solid fa-scroll"></i> Prompt Template</h4>
+            <div class="whispers-field-group">
+                <textarea id="whispers-prompt-template" rows="6" placeholder="Main prompt template..."></textarea>
+                <span style="font-size:0.75em;opacity:0.5;">
+                    Variables: {{name}}, {{character}}, {{bans}}, {{context}}
+                </span>
+            </div>
         </div>
     </div>`;
 }
@@ -571,182 +486,357 @@ function buildChatBarButton() {
     </div>`;
 }
 
-// ── State ───────────────────────────────────────────────────────
+// ── UI: Render Item List (Folders + Assistants) ─────────────────
 
-let selectedAssistantId = null;
-let isGenerating = false;
-
-// ── UI Logic ────────────────────────────────────────────────────
-
-function refreshAssistantList() {
+function renderItemList() {
     const settings = getSettings();
-    const listEl = document.getElementById('whispers-assistant-list');
-    if (!listEl) return;
+    const list = document.getElementById('whispers-item-list');
+    if (!list) return;
+    list.innerHTML = '';
 
-    listEl.innerHTML = '';
+    // Render folders
+    for (const folder of settings.folders) {
+        const folderAssistants = settings.assistants.filter(a => a.folderId === folder.id);
+        const folderEl = document.createElement('div');
+        folderEl.className = 'whispers-folder';
+        folderEl.dataset.id = folder.id;
+        folderEl.style.setProperty('--folder-color', folder.color || '#888');
 
-    if (settings.assistants.length === 0) {
-        listEl.innerHTML = '<div style="opacity:0.4;font-size:0.85em;text-align:center;padding:10px;">No assistants yet</div>';
-        return;
-    }
+        folderEl.innerHTML = `
+            <div class="whispers-folder-header">
+                <span class="whispers-folder-icon" style="color:${folder.color || 'inherit'}">
+                    <i class="fa-solid ${folder.icon || 'fa-folder'}"></i>
+                </span>
+                <span class="whispers-folder-name">${escapeHtml(folder.name || 'Folder')}</span>
+                <span class="whispers-folder-count">${folderAssistants.length}</span>
+                <span class="whispers-assistant-actions">
+                    <button class="edit-folder-btn" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                    <button class="export-folder-btn" title="Export"><i class="fa-solid fa-file-export"></i></button>
+                    <button class="delete-btn" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                </span>
+                <i class="fa-solid fa-chevron-right whispers-folder-chevron"></i>
+            </div>
+            <div class="whispers-folder-children">
+                ${folder.note ? `<div class="whispers-folder-note">${escapeHtml(folder.note)}</div>` : ''}
+            </div>
+        `;
 
-    for (const asst of settings.assistants) {
-        const item = document.createElement('div');
-        item.className = 'whispers-assistant-item' + (asst.id === selectedAssistantId ? ' active' : '');
-        item.dataset.id = asst.id;
-
-        const avatarHtml = asst.avatar
-            ? `<img class="whispers-assistant-avatar" src="${asst.avatar}" alt="">`
-            : `<div class="whispers-assistant-avatar-placeholder"><i class="fa-solid fa-ghost"></i></div>`;
-
-        // Determine binding badge
-        let badge = '';
-        if (settings.globalAssistantId === asst.id) badge = '<i class="fa-solid fa-globe" title="Global" style="opacity:0.5;font-size:0.8em;"></i>';
-        const charName = getCurrentCharName();
-        if (charName && settings.characterBindings[charName] === asst.id) badge = '<i class="fa-solid fa-user" title="Bound to character" style="opacity:0.5;font-size:0.8em;"></i>';
-        const meta = getChatMeta();
-        if (meta && meta.whispers_assistant_id === asst.id) badge = '<i class="fa-solid fa-comment" title="Bound to chat" style="opacity:0.5;font-size:0.8em;"></i>';
-
-        item.innerHTML = `${avatarHtml}<span class="whispers-assistant-name">${asst.name || 'Unnamed'}</span>${badge}`;
-
-        item.addEventListener('click', () => {
-            selectedAssistantId = asst.id;
-            refreshAssistantList();
-            loadAssistantEditor(asst);
+        // Folder header click to expand/collapse
+        const header = folderEl.querySelector('.whispers-folder-header');
+        header.addEventListener('click', (e) => {
+            if (e.target.closest('.whispers-assistant-actions')) return;
+            folderEl.classList.toggle('open');
         });
 
-        listEl.appendChild(item);
+        // Edit folder
+        folderEl.querySelector('.edit-folder-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleFolderEdit(folder.id);
+        });
+
+        // Export folder
+        folderEl.querySelector('.export-folder-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            exportFolderToPng(folder, folderAssistants);
+        });
+
+        // Delete folder
+        folderEl.querySelector('.delete-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            settings.folders = settings.folders.filter(f => f.id !== folder.id);
+            // Unparent assistants
+            settings.assistants.forEach(a => { if (a.folderId === folder.id) a.folderId = null; });
+            saveSettings();
+            renderItemList();
+        });
+
+        // Add assistants inside folder
+        const childrenEl = folderEl.querySelector('.whispers-folder-children');
+        for (const asst of folderAssistants) {
+            childrenEl.appendChild(createAssistantItem(asst));
+        }
+
+        list.appendChild(folderEl);
+    }
+
+    // Render unfoldered assistants
+    const unfoldered = settings.assistants.filter(a => !a.folderId);
+    for (const asst of unfoldered) {
+        list.appendChild(createAssistantItem(asst));
+    }
+
+    if (settings.folders.length === 0 && settings.assistants.length === 0) {
+        list.innerHTML = '<div style="opacity:0.4;font-size:0.85em;text-align:center;padding:10px;">No assistants yet</div>';
     }
 }
 
-function loadAssistantEditor(assistant) {
-    const section = document.getElementById('whispers-edit-section');
-    if (!section) return;
-    section.style.display = '';
-
-    document.getElementById('whispers-edit-name').value = assistant.name || '';
-    document.getElementById('whispers-edit-character').value = assistant.character || '';
-    document.getElementById('whispers-edit-bans').value = assistant.bans || '';
-
-    // Avatar
-    const avatarEl = document.getElementById('whispers-edit-avatar');
-    if (assistant.avatar) {
-        avatarEl.innerHTML = `<img class="whispers-avatar-preview" src="${assistant.avatar}" alt="">`;
-    } else {
-        avatarEl.innerHTML = '<i class="fa-solid fa-image"></i>';
-        avatarEl.className = 'whispers-avatar-preview-placeholder';
-    }
-}
-
-function clearEditor() {
-    const section = document.getElementById('whispers-edit-section');
-    if (section) section.style.display = 'none';
-    selectedAssistantId = null;
-}
-
-function loadSettingsUI() {
+function createAssistantItem(asst) {
     const settings = getSettings();
+    const container = document.createElement('div');
 
-    const urlInput = document.getElementById('whispers-api-url');
-    if (urlInput) urlInput.value = settings.extraApiUrl || '';
+    // Item row
+    const item = document.createElement('div');
+    item.className = 'whispers-assistant-item' + (asst.id === editingAssistantId ? ' active' : '');
+    item.dataset.id = asst.id;
 
-    const limitInput = document.getElementById('whispers-msg-limit');
-    if (limitInput) limitInput.value = settings.messageLimit || 20;
+    const avatarHtml = asst.avatar
+        ? `<img class="whispers-assistant-avatar" src="${asst.avatar}" alt="">`
+        : `<div class="whispers-assistant-avatar-placeholder"><i class="fa-solid fa-ghost"></i></div>`;
 
-    const extraCheck = document.getElementById('whispers-use-extra-api');
-    if (extraCheck) {
-        extraCheck.checked = settings.useExtraApi || false;
-        toggleApiUrlVisibility(settings.useExtraApi);
+    // Binding badge
+    let badge = '';
+    if (asst.binding === 'global') badge = '<i class="fa-solid fa-globe whispers-badge" title="Global"></i>';
+    else if (asst.binding === 'character') badge = `<i class="fa-solid fa-user whispers-badge" title="Character: ${escapeHtml(asst.bindingTarget || '')}"></i>`;
+    else if (asst.binding === 'chat') badge = '<i class="fa-solid fa-comment whispers-badge" title="Chat-bound"></i>';
+
+    item.innerHTML = `
+        ${avatarHtml}
+        <span class="whispers-assistant-name">${escapeHtml(asst.name || 'Unnamed')}</span>
+        <span class="whispers-assistant-badges">${badge}</span>
+        <span class="whispers-assistant-actions">
+            <button class="export-btn" title="Export PNG"><i class="fa-solid fa-file-export"></i></button>
+            <button class="delete-btn" title="Delete"><i class="fa-solid fa-trash"></i></button>
+        </span>
+    `;
+
+    // Click to toggle inline edit
+    item.addEventListener('click', (e) => {
+        if (e.target.closest('.whispers-assistant-actions')) return;
+        if (editingAssistantId === asst.id) {
+            editingAssistantId = null;
+        } else {
+            editingAssistantId = asst.id;
+        }
+        renderItemList();
+    });
+
+    // Export
+    item.querySelector('.export-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        exportAssistantToPng(asst);
+    });
+
+    // Delete
+    item.querySelector('.delete-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        settings.assistants = settings.assistants.filter(a => a.id !== asst.id);
+        if (editingAssistantId === asst.id) editingAssistantId = null;
+        const meta = getChatMeta();
+        if (meta && meta.whispers_assistant_id === asst.id) delete meta.whispers_assistant_id;
+        saveSettings();
+        renderItemList();
+        updateChatHeader();
+    });
+
+    container.appendChild(item);
+
+    // Inline edit panel (if this assistant is being edited)
+    if (editingAssistantId === asst.id) {
+        container.appendChild(createInlineEditPanel(asst));
     }
 
-    const promptInput = document.getElementById('whispers-prompt-template');
-    if (promptInput) promptInput.value = settings.mainPromptTemplate || defaultSettings.mainPromptTemplate;
-
-    refreshAssistantList();
+    return container;
 }
 
-function toggleApiUrlVisibility(show) {
-    const group = document.getElementById('whispers-api-url-group');
-    if (group) group.style.display = show ? '' : 'none';
+function createInlineEditPanel(asst) {
+    const settings = getSettings();
+    const charName = getCurrentCharName();
+
+    const panel = document.createElement('div');
+    panel.className = 'whispers-inline-edit';
+    panel.innerHTML = `
+        <div class="whispers-avatar-upload">
+            <div class="whispers-avatar-preview-placeholder" id="whispers-inline-avatar-${asst.id}" title="Click to set avatar" style="cursor:pointer;">
+                ${asst.avatar ? `<img class="whispers-avatar-preview" src="${asst.avatar}" alt="">` : '<i class="fa-solid fa-image"></i>'}
+            </div>
+            <span style="font-size:0.8em;opacity:0.6;">Click to set avatar</span>
+        </div>
+        <div class="whispers-field-group">
+            <label><i class="fa-solid fa-signature"></i> Name</label>
+            <input type="text" class="w-edit-name" value="${escapeHtml(asst.name || '')}" placeholder="Name">
+        </div>
+        <div class="whispers-field-group">
+            <label><i class="fa-solid fa-masks-theater"></i> Character</label>
+            <textarea class="w-edit-character" placeholder="Personality...">${escapeHtml(asst.character || '')}</textarea>
+        </div>
+        <div class="whispers-field-group">
+            <label><i class="fa-solid fa-ban"></i> Bans</label>
+            <textarea class="w-edit-bans" placeholder="Never say...">${escapeHtml(asst.bans || '')}</textarea>
+        </div>
+        <div class="whispers-field-group">
+            <label><i class="fa-solid fa-link"></i> Binding</label>
+            <select class="w-edit-binding">
+                <option value="none" ${asst.binding === 'none' || !asst.binding ? 'selected' : ''}>None</option>
+                <option value="global" ${asst.binding === 'global' ? 'selected' : ''}>Global (all chats)</option>
+                <option value="character" ${asst.binding === 'character' ? 'selected' : ''}>Character${charName ? ` (${charName})` : ''}</option>
+                <option value="chat" ${asst.binding === 'chat' ? 'selected' : ''}>This Chat</option>
+            </select>
+        </div>
+        <div class="whispers-field-group">
+            <label><i class="fa-solid fa-folder"></i> Folder</label>
+            <select class="w-edit-folder">
+                <option value="">No folder</option>
+                ${settings.folders.map(f => `<option value="${f.id}" ${asst.folderId === f.id ? 'selected' : ''}>${escapeHtml(f.name)}</option>`).join('')}
+            </select>
+        </div>
+        <div class="whispers-row">
+            <button class="menu_button w-save-btn"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+        </div>
+    `;
+
+    // Avatar click
+    panel.querySelector(`#whispers-inline-avatar-${asst.id}`).addEventListener('click', () => {
+        const fileInput = document.getElementById('whispers-avatar-file');
+        fileInput.dataset.targetAssistant = asst.id;
+        fileInput.click();
+    });
+
+    // Save
+    panel.querySelector('.w-save-btn').addEventListener('click', () => {
+        asst.name = panel.querySelector('.w-edit-name').value || 'Unnamed';
+        asst.character = panel.querySelector('.w-edit-character').value || '';
+        asst.bans = panel.querySelector('.w-edit-bans').value || '';
+
+        const newBinding = panel.querySelector('.w-edit-binding').value;
+        asst.binding = newBinding;
+        if (newBinding === 'character') {
+            asst.bindingTarget = getCurrentCharName();
+        } else if (newBinding === 'chat') {
+            const meta = getChatMeta();
+            if (meta) meta.whispers_assistant_id = asst.id;
+            saveChatMeta();
+        } else {
+            asst.bindingTarget = null;
+        }
+
+        asst.folderId = panel.querySelector('.w-edit-folder').value || null;
+
+        saveSettings();
+        renderItemList();
+        updateChatHeader();
+        toastr.success('Assistant saved');
+    });
+
+    return panel;
+}
+
+// ── Folder Edit ─────────────────────────────────────────────────
+
+function toggleFolderEdit(folderId) {
+    if (editingFolderId === folderId) {
+        editingFolderId = null;
+    } else {
+        editingFolderId = folderId;
+    }
+    renderItemList();
+    // If editing, inject the form
+    if (editingFolderId) {
+        const settings = getSettings();
+        const folder = settings.folders.find(f => f.id === editingFolderId);
+        if (!folder) return;
+
+        const folderEl = document.querySelector(`.whispers-folder[data-id="${folderId}"]`);
+        if (!folderEl) return;
+
+        const existing = folderEl.querySelector('.whispers-folder-edit');
+        if (existing) { existing.remove(); return; }
+
+        const form = document.createElement('div');
+        form.className = 'whispers-folder-edit';
+        form.innerHTML = `
+            <div class="whispers-field-group">
+                <label><i class="fa-solid fa-pen"></i> Name</label>
+                <input type="text" class="wf-name" value="${escapeHtml(folder.name || '')}">
+            </div>
+            <div class="whispers-field-group">
+                <label><i class="fa-solid fa-icons"></i> Icon (FA class)</label>
+                <input type="text" class="wf-icon" value="${escapeHtml(folder.icon || 'fa-folder')}" placeholder="fa-folder">
+            </div>
+            <div class="whispers-color-row">
+                <label><i class="fa-solid fa-palette"></i> Color</label>
+                <input type="color" class="wf-color" value="${folder.color || '#667eea'}">
+            </div>
+            <div class="whispers-field-group">
+                <label><i class="fa-solid fa-note-sticky"></i> Author's Note</label>
+                <textarea class="wf-note" placeholder="Describe what's in this folder...">${escapeHtml(folder.note || '')}</textarea>
+            </div>
+            <button class="menu_button wf-save"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+        `;
+
+        form.querySelector('.wf-save').addEventListener('click', () => {
+            folder.name = form.querySelector('.wf-name').value || 'Folder';
+            folder.icon = form.querySelector('.wf-icon').value || 'fa-folder';
+            folder.color = form.querySelector('.wf-color').value || '#667eea';
+            folder.note = form.querySelector('.wf-note').value || '';
+            editingFolderId = null;
+            saveSettings();
+            renderItemList();
+            toastr.success('Folder saved');
+        });
+
+        folderEl.appendChild(form);
+    }
 }
 
 // ── Chat UI ─────────────────────────────────────────────────────
 
 function renderChatMessages() {
-    const messagesEl = document.getElementById('whispers-messages');
-    const emptyEl = document.getElementById('whispers-empty-state');
-    if (!messagesEl) return;
-
+    const el = document.getElementById('whispers-messages');
+    const empty = document.getElementById('whispers-empty-state');
+    if (!el) return;
+    el.querySelectorAll('.whispers-msg, .whispers-typing').forEach(e => e.remove());
     const history = getWhispersHistory();
-
-    // Remove existing messages (keep empty state)
-    const existing = messagesEl.querySelectorAll('.whispers-msg, .whispers-typing');
-    existing.forEach(el => el.remove());
-
-    if (history.length === 0) {
-        if (emptyEl) emptyEl.style.display = '';
-        return;
-    }
-
-    if (emptyEl) emptyEl.style.display = 'none';
-
+    if (history.length === 0) { if (empty) empty.style.display = ''; return; }
+    if (empty) empty.style.display = 'none';
     for (const msg of history) {
-        const bubble = document.createElement('div');
-        bubble.className = `whispers-msg whispers-msg-${msg.role}`;
-        const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-        bubble.innerHTML = `${escapeHtml(msg.content)}<span class="whispers-msg-time">${time}</span>`;
-        messagesEl.appendChild(bubble);
+        const b = document.createElement('div');
+        b.className = `whispers-msg whispers-msg-${msg.role}`;
+        const t = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        b.innerHTML = `${escapeHtml(msg.content)}<span class="whispers-msg-time">${t}</span>`;
+        el.appendChild(b);
     }
-
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    el.scrollTop = el.scrollHeight;
 }
 
-function addMessageBubble(role, content) {
-    const messagesEl = document.getElementById('whispers-messages');
-    const emptyEl = document.getElementById('whispers-empty-state');
-    if (!messagesEl) return;
-
-    if (emptyEl) emptyEl.style.display = 'none';
-
-    const bubble = document.createElement('div');
-    bubble.className = `whispers-msg whispers-msg-${role}`;
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    bubble.innerHTML = `${escapeHtml(content)}<span class="whispers-msg-time">${time}</span>`;
-    messagesEl.appendChild(bubble);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+function addBubble(role, content) {
+    const el = document.getElementById('whispers-messages');
+    const empty = document.getElementById('whispers-empty-state');
+    if (!el) return;
+    if (empty) empty.style.display = 'none';
+    const b = document.createElement('div');
+    b.className = `whispers-msg whispers-msg-${role}`;
+    const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    b.innerHTML = `${escapeHtml(content)}<span class="whispers-msg-time">${t}</span>`;
+    el.appendChild(b);
+    el.scrollTop = el.scrollHeight;
 }
 
-function showTypingIndicator() {
-    const messagesEl = document.getElementById('whispers-messages');
-    if (!messagesEl) return;
-
-    removeTypingIndicator();
-
-    const typing = document.createElement('div');
-    typing.className = 'whispers-typing';
-    typing.id = 'whispers-typing-indicator';
-    typing.innerHTML = '<div class="whispers-typing-dot"></div><div class="whispers-typing-dot"></div><div class="whispers-typing-dot"></div>';
-    messagesEl.appendChild(typing);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+function showTyping() {
+    const el = document.getElementById('whispers-messages');
+    if (!el) return;
+    hideTyping();
+    const t = document.createElement('div');
+    t.className = 'whispers-typing'; t.id = 'whispers-typing-indicator';
+    t.innerHTML = '<div class="whispers-typing-dot"></div><div class="whispers-typing-dot"></div><div class="whispers-typing-dot"></div>';
+    el.appendChild(t);
+    el.scrollTop = el.scrollHeight;
 }
 
-function removeTypingIndicator() {
-    const el = document.getElementById('whispers-typing-indicator');
-    if (el) el.remove();
+function hideTyping() {
+    document.getElementById('whispers-typing-indicator')?.remove();
 }
 
 function updateChatHeader() {
-    const assistant = getActiveAssistant();
+    const a = getActiveAssistant();
     const nameEl = document.getElementById('whispers-chat-name');
     const avatarEl = document.getElementById('whispers-chat-avatar');
     const statusEl = document.getElementById('whispers-chat-status');
-
-    if (assistant) {
-        if (nameEl) nameEl.textContent = assistant.name || 'Assistant';
+    if (a) {
+        if (nameEl) nameEl.textContent = a.name || 'Assistant';
         if (statusEl) statusEl.textContent = 'Online';
         if (avatarEl) {
-            if (assistant.avatar) {
-                avatarEl.innerHTML = `<img class="whispers-chat-header-avatar" src="${assistant.avatar}" alt="">`;
+            if (a.avatar) {
+                avatarEl.innerHTML = `<img class="whispers-chat-header-avatar" src="${a.avatar}" alt="">`;
                 avatarEl.className = '';
             } else {
                 avatarEl.innerHTML = '<i class="fa-solid fa-ghost"></i>';
@@ -756,90 +846,55 @@ function updateChatHeader() {
     } else {
         if (nameEl) nameEl.textContent = 'Whispers';
         if (statusEl) statusEl.textContent = 'No assistant configured';
-        if (avatarEl) {
-            avatarEl.innerHTML = '<i class="fa-solid fa-ghost"></i>';
-            avatarEl.className = 'whispers-chat-header-avatar-placeholder';
-        }
+        if (avatarEl) { avatarEl.innerHTML = '<i class="fa-solid fa-ghost"></i>'; avatarEl.className = 'whispers-chat-header-avatar-placeholder'; }
     }
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
 }
 
 function openChat() {
-    const overlay = document.getElementById('whispers-overlay');
-    if (overlay) {
-        overlay.classList.add('open');
-        updateChatHeader();
-        renderChatMessages();
-        const input = document.getElementById('whispers-input');
-        if (input) setTimeout(() => input.focus(), 350);
-    }
+    const o = document.getElementById('whispers-overlay');
+    if (o) { o.classList.add('open'); updateChatHeader(); renderChatMessages(); setTimeout(() => document.getElementById('whispers-input')?.focus(), 350); }
 }
 
 function closeChat() {
-    const overlay = document.getElementById('whispers-overlay');
-    if (overlay) overlay.classList.remove('open');
+    document.getElementById('whispers-overlay')?.classList.remove('open');
 }
 
 // ── Send Message ────────────────────────────────────────────────
 
 async function sendMessage() {
     if (isGenerating) return;
-
     const input = document.getElementById('whispers-input');
     const sendBtn = document.getElementById('whispers-send');
     if (!input) return;
-
     const text = input.value.trim();
     if (!text) return;
 
     const assistant = getActiveAssistant();
-    if (!assistant) {
-        toastr.warning('No assistant configured. Create one in the Whispers settings.');
-        return;
-    }
+    if (!assistant) { toastr.warning('No assistant configured.'); return; }
 
-    // Add user message
     const history = getWhispersHistory();
-    history.push({
-        role: 'user',
-        content: text,
-        timestamp: Date.now(),
-    });
+    history.push({ role: 'user', content: text, timestamp: Date.now() });
     await saveChatMeta();
 
-    input.value = '';
-    autoResizeInput();
-    addMessageBubble('user', text);
-    showTypingIndicator();
+    input.value = ''; autoResize();
+    addBubble('user', text);
+    showTyping();
 
     isGenerating = true;
     if (sendBtn) sendBtn.disabled = true;
-
     const statusEl = document.getElementById('whispers-chat-status');
     if (statusEl) statusEl.textContent = 'Typing...';
 
     try {
         const response = await generateResponse(text);
-        removeTypingIndicator();
-
-        // Add assistant message
-        history.push({
-            role: 'assistant',
-            content: response,
-            timestamp: Date.now(),
-        });
+        hideTyping();
+        history.push({ role: 'assistant', content: response, timestamp: Date.now() });
         await saveChatMeta();
-
-        addMessageBubble('assistant', response);
+        addBubble('assistant', response);
     } catch (err) {
-        removeTypingIndicator();
-        toastr.error(`Whispers error: ${err.message}`);
-        addMessageBubble('assistant', `Error: ${err.message}`);
+        hideTyping();
+        toastr.error(`Whispers: ${err.message}`);
+        addBubble('assistant', `Error: ${err.message}`);
     } finally {
         isGenerating = false;
         if (sendBtn) sendBtn.disabled = false;
@@ -847,264 +902,231 @@ async function sendMessage() {
     }
 }
 
-// ── Auto-resize textarea ────────────────────────────────────────
-
-function autoResizeInput() {
+function autoResize() {
     const input = document.getElementById('whispers-input');
     if (!input) return;
     input.style.height = 'auto';
     input.style.height = Math.min(input.scrollHeight, 120) + 'px';
 }
 
-// ── Event Handlers ──────────────────────────────────────────────
+// ── Load Settings UI ────────────────────────────────────────────
+
+function loadSettingsUI() {
+    const s = getSettings();
+    const el = (id) => document.getElementById(id);
+    if (el('whispers-api-url')) el('whispers-api-url').value = s.extraApiUrl || '';
+    if (el('whispers-api-key')) el('whispers-api-key').value = s.extraApiKey || '';
+    if (el('whispers-msg-limit')) el('whispers-msg-limit').value = s.messageLimit || 20;
+    if (el('whispers-prompt-template')) el('whispers-prompt-template').value = s.mainPromptTemplate || defaultSettings.mainPromptTemplate;
+
+    const extraCheck = el('whispers-use-extra-api');
+    if (extraCheck) {
+        extraCheck.checked = s.useExtraApi || false;
+        toggleApiSection(s.useExtraApi);
+    }
+
+    if (s.extraApiModel) {
+        const select = el('whispers-model-select');
+        if (select && !select.querySelector(`option[value="${s.extraApiModel}"]`)) {
+            const opt = document.createElement('option');
+            opt.value = s.extraApiModel;
+            opt.textContent = s.extraApiModel;
+            opt.selected = true;
+            select.appendChild(opt);
+        } else if (select) {
+            select.value = s.extraApiModel;
+        }
+    }
+
+    renderItemList();
+}
+
+function toggleApiSection(show) {
+    const sec = document.getElementById('whispers-api-section');
+    if (sec) sec.style.display = show ? '' : 'none';
+}
+
+// ── Event Binding ───────────────────────────────────────────────
 
 function bindEvents() {
-    // Chat bar button
-    document.getElementById('whispers-chat-btn')?.addEventListener('click', openChat);
+    const el = (id) => document.getElementById(id);
 
-    // Close overlay
-    document.getElementById('whispers-chat-close')?.addEventListener('click', closeChat);
-    document.getElementById('whispers-overlay')?.addEventListener('click', (e) => {
-        if (e.target === e.currentTarget) closeChat();
+    // Panel collapse
+    el('whispers-panel-toggle')?.addEventListener('click', () => {
+        panelCollapsed = !panelCollapsed;
+        const body = el('whispers-panel-body');
+        const header = el('whispers-panel-toggle');
+        if (body) body.classList.toggle('collapsed', panelCollapsed);
+        if (header) header.classList.toggle('collapsed', panelCollapsed);
     });
 
-    // Send message
-    document.getElementById('whispers-send')?.addEventListener('click', sendMessage);
-    document.getElementById('whispers-input')?.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
-    });
-    document.getElementById('whispers-input')?.addEventListener('input', autoResizeInput);
-
-    // Clear history
-    document.getElementById('whispers-chat-clear')?.addEventListener('click', async () => {
+    // Chat
+    el('whispers-chat-btn')?.addEventListener('click', openChat);
+    el('whispers-chat-close')?.addEventListener('click', closeChat);
+    el('whispers-overlay')?.addEventListener('click', (e) => { if (e.target === e.currentTarget) closeChat(); });
+    el('whispers-send')?.addEventListener('click', sendMessage);
+    el('whispers-input')?.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+    el('whispers-input')?.addEventListener('input', autoResize);
+    el('whispers-chat-clear')?.addEventListener('click', async () => {
         const meta = getChatMeta();
-        if (meta) {
-            meta.whispers_history = [];
-            await saveChatMeta();
-        }
+        if (meta) { meta.whispers_history = []; await saveChatMeta(); }
         renderChatMessages();
     });
 
     // New assistant
-    document.getElementById('whispers-btn-new')?.addEventListener('click', () => {
+    el('whispers-btn-new-assistant')?.addEventListener('click', () => {
         const settings = getSettings();
-        const newAssistant = {
-            id: generateId(),
-            name: 'New Assistant',
-            character: '',
-            bans: '',
-            avatar: null,
-        };
-        settings.assistants.push(newAssistant);
+        const a = { id: generateId(), name: 'New Assistant', character: '', bans: '', avatar: null, binding: 'none', bindingTarget: null, folderId: null };
+        settings.assistants.push(a);
         saveSettings();
-        selectedAssistantId = newAssistant.id;
-        refreshAssistantList();
-        loadAssistantEditor(newAssistant);
+        editingAssistantId = a.id;
+        renderItemList();
     });
 
-    // Save assistant
-    document.getElementById('whispers-btn-save')?.addEventListener('click', () => {
-        if (!selectedAssistantId) return;
+    // New folder
+    el('whispers-btn-new-folder')?.addEventListener('click', () => {
         const settings = getSettings();
-        const asst = settings.assistants.find(a => a.id === selectedAssistantId);
-        if (!asst) return;
-
-        asst.name = document.getElementById('whispers-edit-name')?.value || 'Unnamed';
-        asst.character = document.getElementById('whispers-edit-character')?.value || '';
-        asst.bans = document.getElementById('whispers-edit-bans')?.value || '';
-
+        const f = { id: generateId(), name: 'New Folder', icon: 'fa-folder', color: '#667eea', note: '' };
+        settings.folders.push(f);
         saveSettings();
-        refreshAssistantList();
-        updateChatHeader();
-        toastr.success('Assistant saved');
+        editingFolderId = f.id;
+        renderItemList();
+        toggleFolderEdit(f.id);
     });
 
-    // Delete assistant
-    document.getElementById('whispers-btn-delete')?.addEventListener('click', () => {
-        if (!selectedAssistantId) return;
-        const settings = getSettings();
-        settings.assistants = settings.assistants.filter(a => a.id !== selectedAssistantId);
-
-        // Clean up bindings
-        if (settings.globalAssistantId === selectedAssistantId) settings.globalAssistantId = '';
-        for (const key of Object.keys(settings.characterBindings)) {
-            if (settings.characterBindings[key] === selectedAssistantId) delete settings.characterBindings[key];
-        }
-
-        saveSettings();
-        clearEditor();
-        refreshAssistantList();
-        updateChatHeader();
-        toastr.info('Assistant deleted');
-    });
-
-    // Export PNG
-    document.getElementById('whispers-btn-export')?.addEventListener('click', () => {
-        if (!selectedAssistantId) return;
-        const settings = getSettings();
-        const asst = settings.assistants.find(a => a.id === selectedAssistantId);
-        if (asst) exportAssistantToPng(asst);
-    });
-
-    // Import PNG
-    document.getElementById('whispers-btn-import')?.addEventListener('click', () => {
-        document.getElementById('whispers-import-file')?.click();
-    });
-
-    document.getElementById('whispers-import-file')?.addEventListener('change', async (e) => {
+    // Import
+    el('whispers-btn-import')?.addEventListener('click', () => el('whispers-import-file')?.click());
+    el('whispers-import-file')?.addEventListener('change', async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        const assistant = await importAssistantFromPng(file);
-        if (assistant) {
-            const settings = getSettings();
-            settings.assistants.push(assistant);
-            saveSettings();
-            selectedAssistantId = assistant.id;
-            refreshAssistantList();
-            loadAssistantEditor(assistant);
-            toastr.success(`Imported: ${assistant.name}`);
+        const result = await importFromPng(file);
+        if (!result) { e.target.value = ''; return; }
+        const settings = getSettings();
+
+        if (result.type === 'folder') {
+            const fd = result.data;
+            const newFolder = { id: generateId(), name: fd.folder.name, icon: fd.folder.icon, color: fd.folder.color, note: fd.folder.note || '' };
+            settings.folders.push(newFolder);
+            for (const ad of fd.assistants) {
+                settings.assistants.push({
+                    id: generateId(), name: ad.name, character: ad.character, bans: ad.bans,
+                    avatar: ad.avatar, binding: 'none', bindingTarget: null, folderId: newFolder.id
+                });
+            }
+            toastr.success(`Imported folder: ${newFolder.name}`);
+        } else {
+            settings.assistants.push(result.data);
+            toastr.success(`Imported: ${result.data.name}`);
         }
+        saveSettings();
+        renderItemList();
         e.target.value = '';
     });
 
-    // Avatar upload
-    document.getElementById('whispers-edit-avatar')?.addEventListener('click', () => {
-        document.getElementById('whispers-avatar-file')?.click();
-    });
-
-    document.getElementById('whispers-avatar-file')?.addEventListener('change', (e) => {
+    // Avatar file
+    el('whispers-avatar-file')?.addEventListener('change', (e) => {
         const file = e.target.files?.[0];
-        if (!file || !selectedAssistantId) return;
-
+        const targetId = e.target.dataset.targetAssistant;
+        if (!file || !targetId) return;
         const reader = new FileReader();
         reader.onload = (ev) => {
             const settings = getSettings();
-            const asst = settings.assistants.find(a => a.id === selectedAssistantId);
+            const asst = settings.assistants.find(a => a.id === targetId);
             if (asst) {
                 asst.avatar = ev.target.result;
                 saveSettings();
-                loadAssistantEditor(asst);
-                refreshAssistantList();
+                renderItemList();
             }
         };
         reader.readAsDataURL(file);
         e.target.value = '';
     });
 
-    // Binding
-    document.getElementById('whispers-btn-bind')?.addEventListener('click', async () => {
-        if (!selectedAssistantId) {
-            toastr.warning('Select an assistant first');
-            return;
-        }
-
-        const settings = getSettings();
-        const scope = document.getElementById('whispers-binding-scope')?.value;
-
-        if (scope === 'global') {
-            settings.globalAssistantId = selectedAssistantId;
-            saveSettings();
-            toastr.success('Set as global assistant');
-        } else if (scope === 'character') {
-            const charName = getCurrentCharName();
-            if (!charName) {
-                toastr.warning('No character selected');
-                return;
-            }
-            settings.characterBindings[charName] = selectedAssistantId;
-            saveSettings();
-            toastr.success(`Bound to character: ${charName}`);
-        } else if (scope === 'chat') {
-            const meta = getChatMeta();
-            if (!meta) {
-                toastr.warning('No active chat');
-                return;
-            }
-            meta.whispers_assistant_id = selectedAssistantId;
-            await saveChatMeta();
-            toastr.success('Bound to this chat');
-        }
-
-        refreshAssistantList();
-        updateChatHeader();
-    });
-
     // API settings
-    document.getElementById('whispers-use-extra-api')?.addEventListener('change', (e) => {
-        const settings = getSettings();
-        settings.useExtraApi = e.target.checked;
+    el('whispers-use-extra-api')?.addEventListener('change', (e) => {
+        const s = getSettings();
+        s.useExtraApi = e.target.checked;
         saveSettings();
-        toggleApiUrlVisibility(e.target.checked);
+        toggleApiSection(e.target.checked);
     });
 
-    document.getElementById('whispers-api-url')?.addEventListener('input', (e) => {
-        const settings = getSettings();
-        settings.extraApiUrl = e.target.value;
-        saveSettings();
-    });
-
-    document.getElementById('whispers-msg-limit')?.addEventListener('input', (e) => {
-        const settings = getSettings();
-        settings.messageLimit = parseInt(e.target.value, 10) || 20;
+    el('whispers-api-url')?.addEventListener('input', (e) => {
+        getSettings().extraApiUrl = e.target.value;
         saveSettings();
     });
 
-    document.getElementById('whispers-prompt-template')?.addEventListener('input', (e) => {
-        const settings = getSettings();
-        settings.mainPromptTemplate = e.target.value;
+    el('whispers-api-key')?.addEventListener('input', (e) => {
+        getSettings().extraApiKey = e.target.value;
         saveSettings();
     });
 
-    // Edit section toggle
-    document.getElementById('whispers-edit-toggle')?.addEventListener('click', () => {
-        const section = document.getElementById('whispers-edit-section');
-        if (section) section.classList.toggle('collapsed');
+    el('whispers-model-select')?.addEventListener('change', (e) => {
+        getSettings().extraApiModel = e.target.value;
+        saveSettings();
+    });
+
+    el('whispers-btn-refresh-models')?.addEventListener('click', async () => {
+        const btn = el('whispers-btn-refresh-models');
+        if (btn) btn.disabled = true;
+        const models = await fetchModels();
+        const select = el('whispers-model-select');
+        if (select) {
+            const current = getSettings().extraApiModel;
+            select.innerHTML = '<option value="">Default</option>';
+            for (const m of models) {
+                const opt = document.createElement('option');
+                opt.value = m; opt.textContent = m;
+                if (m === current) opt.selected = true;
+                select.appendChild(opt);
+            }
+        }
+        if (btn) btn.disabled = false;
+        if (models.length > 0) toastr.success(`Found ${models.length} model(s)`);
+    });
+
+    el('whispers-msg-limit')?.addEventListener('input', (e) => {
+        getSettings().messageLimit = parseInt(e.target.value, 10) || 20;
+        saveSettings();
+    });
+
+    el('whispers-prompt-template')?.addEventListener('input', (e) => {
+        getSettings().mainPromptTemplate = e.target.value;
+        saveSettings();
     });
 }
 
 // ── Init ────────────────────────────────────────────────────────
 
 (function init() {
-    const context = SillyTavern.getContext();
-    const { eventSource, event_types } = context;
+    const { eventSource, event_types } = SillyTavern.getContext();
 
-    // Inject settings panel into extensions menu
-    const settingsContainer = document.getElementById('extensions_settings2');
-    if (settingsContainer) {
-        const wrapper = document.createElement('div');
-        wrapper.innerHTML = buildSettingsHtml();
-        settingsContainer.appendChild(wrapper);
+    // Settings panel
+    const container = document.getElementById('extensions_settings2');
+    if (container) {
+        const w = document.createElement('div');
+        w.innerHTML = buildSettingsHtml();
+        container.appendChild(w);
     }
 
-    // Inject chat overlay
+    // Chat overlay
     document.body.insertAdjacentHTML('beforeend', buildChatOverlayHtml());
 
-    // Inject chat bar button
+    // Chat bar button
     const formSheld = document.getElementById('form_sheld');
     if (formSheld) {
         const sendForm = formSheld.querySelector('#send_form');
-        if (sendForm) {
-            sendForm.insertAdjacentHTML('afterbegin', buildChatBarButton());
-        } else {
-            formSheld.insertAdjacentHTML('afterbegin', buildChatBarButton());
-        }
+        if (sendForm) sendForm.insertAdjacentHTML('afterbegin', buildChatBarButton());
+        else formSheld.insertAdjacentHTML('afterbegin', buildChatBarButton());
     }
 
-    // Bind events
     bindEvents();
-
-    // Load settings
     loadSettingsUI();
 
-    // Listen for chat changes
     eventSource.on(event_types.CHAT_CHANGED, () => {
         updateChatHeader();
         renderChatMessages();
-        refreshAssistantList();
+        renderItemList();
     });
 
-    console.log('[Whispers] Extension loaded');
+    console.log('[Whispers] Extension loaded v2');
 })();
