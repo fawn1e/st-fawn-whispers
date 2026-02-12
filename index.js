@@ -2,8 +2,6 @@
    Whispers — AI Assistant Extension for SillyTavern
    ============================================================ */
 
-import { getApiUrl, doExtrasFetch } from '../../extensions.js';
-
 const MODULE_NAME = 'whispers';
 
 // ── Default Settings ────────────────────────────────────────────
