@@ -1,1178 +1,1491 @@
 /* ============================================================
    Whispers — AI Assistant Extension for SillyTavern
-   Fully adaptive to SillyTavern themes via CSS variables.
+   v2: folders, inline editing, per-assistant binding,
+       API key + model selector, collapsible panel
    ============================================================ */
 
-/* ── Settings Panel ─────────────────────────────────────────── */
+const MODULE_NAME = 'whispers';
 
-.whispers-settings {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+// ── Default Settings ────────────────────────────────────────────
+const defaultSettings = Object.freeze({
+    enabled: true,
+    assistants: [],
+    folders: [],
+    extraApiUrl: '',
+    extraApiKey: '',
+    extraApiModel: '',
+    messageLimit: 20,
+    useExtraApi: false,
+    mainPromptTemplate: `You are a personal assistant in a chat application. Respond concisely and helpfully. Format your response as plain text.
+
+Your identity:
+Name — {{name}}
+Character — {{character}}
+Bans — {{bans}}
+
+Conversation context (last messages from the main chat):
+{{context}}
+
+Now respond to the user's message in the assistant chat.`,
+});
+
+// ── Helpers ─────────────────────────────────────────────────────
+
+function generateId() {
+    return 'w_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
 }
 
-/* ── Tab Switcher ──────────────────────────────────────────── */
-
-.whispers-tabs {
-    display: flex;
-    gap: 0;
-    border-radius: 10px;
-    overflow: hidden;
-    border: 1px solid var(--SmartThemeBorderColor);
-    background: var(--SmartThemeBlurTintColor);
+function getSettings() {
+    const { extensionSettings } = SillyTavern.getContext();
+    if (!extensionSettings[MODULE_NAME]) {
+        extensionSettings[MODULE_NAME] = structuredClone(defaultSettings);
+    }
+    const s = extensionSettings[MODULE_NAME];
+    for (const key of Object.keys(defaultSettings)) {
+        if (!Object.hasOwn(s, key)) {
+            s[key] = structuredClone(defaultSettings[key]);
+        }
+    }
+    return s;
 }
 
-.whispers-tab {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    padding: 8px 6px;
-    font-size: 0.8em;
-    cursor: pointer;
-    color: var(--SmartThemeBodyColor);
-    opacity: 0.5;
-    transition: all 0.2s;
-    text-align: center;
-    user-select: none;
-    border-right: 1px solid var(--SmartThemeBorderColor);
+function saveSettings() {
+    SillyTavern.getContext().saveSettingsDebounced();
 }
 
-.whispers-tab:last-child {
-    border-right: none;
+function getChatMeta() {
+    return SillyTavern.getContext().chatMetadata;
 }
 
-.whispers-tab input[type="radio"] {
-    display: none;
+async function saveChatMeta() {
+    await SillyTavern.getContext().saveMetadata();
 }
 
-.whispers-tab:hover {
-    opacity: 0.8;
-    background: var(--SmartThemeBorderColor);
+function getWhispersHistory() {
+    const meta = getChatMeta();
+    if (!meta) return [];
+    if (!meta.whispers_history) meta.whispers_history = [];
+    return meta.whispers_history;
 }
 
-.whispers-tab.active {
-    opacity: 1;
-    background: var(--SmartThemeQuoteColor);
-    color: var(--SmartThemeQuoteFontColor, #fff);
-    font-weight: 600;
+function getCurrentCharName() {
+    const ctx = SillyTavern.getContext();
+    if (ctx.characterId !== undefined && ctx.characters[ctx.characterId]) {
+        return ctx.characters[ctx.characterId].name;
+    }
+    return null;
 }
 
-.whispers-tab-content {
-    animation: whispers-tab-fade 0.2s ease-out;
+function escapeHtml(text) {
+    const d = document.createElement('div');
+    d.textContent = text;
+    return d.innerHTML;
 }
 
-@keyframes whispers-tab-fade {
-    from {
-        opacity: 0;
-        transform: translateY(4px);
+// ── Assistant Model ─────────────────────────────────────────────
+// Each assistant: { id, name, character, bans, avatar, binding, bindingTarget, folderId }
+// binding: 'global' | 'character' | 'chat' | 'none'
+// bindingTarget: charName (for character binding) or null
+
+function getActiveAssistant() {
+    const settings = getSettings();
+    const meta = getChatMeta();
+    const charName = getCurrentCharName();
+
+    // 1. Chat-bound assistant
+    if (meta && meta.whispers_assistant_id) {
+        const a = settings.assistants.find(a => a.id === meta.whispers_assistant_id);
+        if (a) return a;
     }
 
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-/* ── Version Row ───────────────────────────────────────────── */
-
-.whispers-version-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-}
-
-.whispers-version-label {
-    font-size: 0.85em;
-    color: var(--SmartThemeBodyColor);
-    opacity: 0.7;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.whispers-version-label strong {
-    opacity: 1;
-    color: var(--SmartThemeQuoteColor);
-}
-
-/* ── Credits ───────────────────────────────────────────────── */
-
-.whispers-credits {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-    padding: 12px 0 4px;
-}
-
-.whispers-credits-text {
-    font-size: 0.85em;
-    color: var(--SmartThemeBodyColor);
-    opacity: 0.6;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.whispers-credits-text strong {
-    opacity: 1;
-    color: var(--SmartThemeQuoteColor);
-}
-
-.whispers-credits-links {
-    display: flex;
-    gap: 12px;
-}
-
-.whispers-credit-link {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    background: var(--SmartThemeBlurTintColor);
-    border: 1px solid var(--SmartThemeBorderColor);
-    color: var(--SmartThemeBodyColor);
-    font-size: 16px;
-    text-decoration: none;
-    transition: all 0.2s;
-    opacity: 0.7;
-}
-
-.whispers-credit-link:hover {
-    opacity: 1;
-    background: var(--SmartThemeQuoteColor);
-    color: var(--SmartThemeQuoteFontColor, #fff);
-    border-color: var(--SmartThemeQuoteColor);
-    transform: scale(1.1);
-}
-
-.whispers-settings h4 {
-    margin: 8px 0 4px;
-    font-size: 0.9em;
-    color: var(--SmartThemeBodyColor);
-    opacity: 0.8;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.whispers-settings label {
-    font-size: 0.85em;
-    color: var(--SmartThemeBodyColor);
-    opacity: 0.85;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.whispers-settings input[type="text"],
-.whispers-settings input[type="number"],
-.whispers-settings input[type="url"],
-.whispers-settings input[type="password"],
-.whispers-settings textarea,
-.whispers-settings select {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 7px 10px;
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 8px;
-    background: var(--SmartThemeBlurTintColor);
-    color: var(--SmartThemeBodyColor);
-    font-family: inherit;
-    font-size: 0.9em;
-    resize: vertical;
-    transition: border-color 0.2s;
-}
-
-.whispers-settings input:focus,
-.whispers-settings textarea:focus,
-.whispers-settings select:focus {
-    outline: none;
-    border-color: var(--SmartThemeQuoteColor);
-}
-
-.whispers-settings textarea {
-    min-height: 60px;
-}
-
-.whispers-row {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    flex-wrap: wrap;
-}
-
-.whispers-row>input,
-.whispers-row>select {
-    flex: 1;
-    min-width: 0;
-}
-
-/* Buttons */
-.whispers-settings .menu_button,
-.whispers-btn-action {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 6px 12px;
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 8px;
-    background: var(--SmartThemeBlurTintColor);
-    color: var(--SmartThemeBodyColor);
-    cursor: pointer;
-    font-size: 0.85em;
-    transition: background 0.2s, transform 0.1s;
-    white-space: nowrap;
-}
-
-.whispers-settings .menu_button:hover,
-.whispers-btn-action:hover {
-    background: var(--SmartThemeQuoteColor);
-    color: var(--SmartThemeQuoteFontColor, var(--SmartThemeBodyColor));
-    transform: scale(1.02);
-}
-
-.whispers-btn-danger {
-    border-color: #e74c3c !important;
-    color: #e74c3c !important;
-}
-
-.whispers-btn-danger:hover {
-    background: #e74c3c !important;
-    color: #fff !important;
-}
-
-.whispers-btn-small {
-    padding: 4px 8px !important;
-    font-size: 0.8em !important;
-}
-
-.whispers-btn-icon {
-    width: 30px;
-    height: 30px;
-    padding: 0 !important;
-    border-radius: 50% !important;
-    flex-shrink: 0;
-}
-
-/* ── Item List (assistants & folders) ───────────────────────── */
-
-.whispers-item-list {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    max-height: 400px;
-    overflow-y: auto;
-    padding: 4px 0;
-}
-
-.whispers-item-list::-webkit-scrollbar {
-    width: 4px;
-}
-
-.whispers-item-list::-webkit-scrollbar-thumb {
-    background: var(--SmartThemeBorderColor);
-    border-radius: 10px;
-}
-
-/* Folder */
-.whispers-folder {
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 10px;
-    overflow: hidden;
-    margin-bottom: 4px;
-}
-
-.whispers-folder-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    cursor: pointer;
-    transition: background 0.15s;
-    user-select: none;
-}
-
-.whispers-folder-header:hover {
-    background: var(--SmartThemeBlurTintColor);
-}
-
-.whispers-folder-icon {
-    font-size: 16px;
-    width: 24px;
-    text-align: center;
-    flex-shrink: 0;
-}
-
-.whispers-folder-name {
-    flex: 1;
-    font-size: 0.9em;
-    font-weight: 600;
-    color: var(--SmartThemeBodyColor);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.whispers-folder-count {
-    font-size: 0.75em;
-    opacity: 0.5;
-    color: var(--SmartThemeBodyColor);
-}
-
-.whispers-folder-chevron {
-    font-size: 12px;
-    color: var(--SmartThemeBodyColor);
-    opacity: 0.4;
-    transition: transform 0.2s;
-}
-
-.whispers-folder.open .whispers-folder-chevron {
-    transform: rotate(90deg);
-}
-
-.whispers-folder-children {
-    display: none;
-    padding: 2px 6px 6px 20px;
-}
-
-.whispers-folder.open .whispers-folder-children {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-/* Folder edit form */
-.whispers-folder-edit {
-    padding: 8px 10px;
-    border-top: 1px solid var(--SmartThemeBorderColor);
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    background: var(--SmartThemeBlurTintColor);
-}
-
-/* Assistant item */
-.whispers-assistant-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background 0.15s;
-    color: var(--SmartThemeBodyColor);
-}
-
-.whispers-assistant-item:hover {
-    background: var(--SmartThemeBlurTintColor);
-}
-
-.whispers-assistant-item.active {
-    background: var(--SmartThemeQuoteColor);
-    color: var(--SmartThemeQuoteFontColor, var(--SmartThemeBodyColor));
-}
-
-.whispers-assistant-avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 2px solid var(--SmartThemeBorderColor);
-    flex-shrink: 0;
-}
-
-.whispers-assistant-avatar-placeholder {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    border: 2px solid var(--SmartThemeBorderColor);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 14px;
-    color: var(--SmartThemeBodyColor);
-    opacity: 0.5;
-    flex-shrink: 0;
-    background: var(--SmartThemeBlurTintColor);
-}
-
-.whispers-assistant-name {
-    flex: 1;
-    font-size: 0.9em;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.whispers-assistant-badges {
-    display: flex;
-    gap: 4px;
-    align-items: center;
-}
-
-.whispers-badge {
-    font-size: 0.7em;
-    opacity: 0.5;
-}
-
-.whispers-assistant-actions {
-    display: flex;
-    gap: 2px;
-}
-
-.whispers-assistant-actions button {
-    background: transparent;
-    border: none;
-    color: var(--SmartThemeBodyColor);
-    cursor: pointer;
-    padding: 2px 5px;
-    border-radius: 4px;
-    font-size: 0.8em;
-    opacity: 0.6;
-    transition: opacity 0.15s, color 0.15s;
-}
-
-.whispers-assistant-actions button:hover {
-    opacity: 1;
-}
-
-.whispers-assistant-actions button.delete-btn:hover {
-    color: #e74c3c;
-}
-
-/* ── Edit Popup Overlay (shared by assistant/folder/note) ──── */
-
-.whispers-edit-popup-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 99998;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    animation: whispers-fade-in 0.2s ease-out;
-}
-
-@keyframes whispers-fade-in {
-    from {
-        opacity: 0;
+    // 2. Character-bound
+    if (charName) {
+        const a = settings.assistants.find(a => a.binding === 'character' && a.bindingTarget === charName);
+        if (a) return a;
     }
 
-    to {
-        opacity: 1;
+    // 3. Global
+    const g = settings.assistants.find(a => a.binding === 'global');
+    if (g) return g;
+
+    // 4. First available
+    return settings.assistants.length > 0 ? settings.assistants[0] : null;
+}
+
+function buildSystemPrompt(assistant) {
+    const settings = getSettings();
+    let prompt = settings.mainPromptTemplate;
+    prompt = prompt.replace(/\{\{name\}\}/g, assistant.name || 'Assistant');
+    prompt = prompt.replace(/\{\{character\}\}/g, assistant.character || 'Helpful and friendly');
+    prompt = prompt.replace(/\{\{bans\}\}/g, assistant.bans || 'None');
+
+    // Inject message example if present
+    if (assistant.messageExample) {
+        prompt += '\n\nExample of how you should write:\n' + assistant.messageExample;
+    }
+
+    const ctx = SillyTavern.getContext();
+    const chat = ctx.chat || [];
+    const limit = settings.messageLimit || 20;
+    const contextStr = chat.slice(-limit).map(m => {
+        const role = m.is_user ? 'User' : (m.name || 'Character');
+        return `${role}: ${m.mes}`;
+    }).join('\n');
+    prompt = prompt.replace(/\{\{context\}\}/g, contextStr);
+
+    return prompt;
+}
+
+// ── PNG Import/Export ───────────────────────────────────────────
+
+async function exportAssistantToPng(assistant) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 400; canvas.height = 400;
+    const c = canvas.getContext('2d');
+    if (assistant.avatar) {
+        const img = new Image();
+        await new Promise((r, e) => { img.onload = r; img.onerror = e; img.src = assistant.avatar; });
+        c.drawImage(img, 0, 0, 400, 400);
+    } else {
+        const g = c.createLinearGradient(0, 0, 400, 400);
+        g.addColorStop(0, '#667eea'); g.addColorStop(1, '#764ba2');
+        c.fillStyle = g; c.fillRect(0, 0, 400, 400);
+        c.fillStyle = '#fff'; c.font = 'bold 48px sans-serif';
+        c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillText(assistant.name || 'Assistant', 200, 180);
+        c.font = '24px sans-serif'; c.globalAlpha = 0.7;
+        c.fillText('Whispers', 200, 240); c.globalAlpha = 1;
+    }
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+    const pngBytes = new Uint8Array(await blob.arrayBuffer());
+    const data = { name: assistant.name, character: assistant.character, bans: assistant.bans, avatar: assistant.avatar || null };
+    const result = injectTextChunk(pngBytes, 'whispers', JSON.stringify(data));
+    const dlBlob = new Blob([result], { type: 'image/png' });
+    const url = URL.createObjectURL(dlBlob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${assistant.name || 'assistant'}.png`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+async function importAssistantFromPng(file) {
+    const pngBytes = new Uint8Array(await file.arrayBuffer());
+    const jsonStr = extractTextChunk(pngBytes, 'whispers');
+    if (!jsonStr) { toastr.error('This PNG does not contain Whispers data.'); return null; }
+    try {
+        const d = JSON.parse(jsonStr);
+        return { id: generateId(), name: d.name || 'Imported', character: d.character || '', bans: d.bans || '', avatar: d.avatar || null, binding: 'none', bindingTarget: null, folderId: null };
+    } catch { toastr.error('Failed to parse assistant data.'); return null; }
+}
+
+// Folder export: exports folder + all its assistants
+async function exportFolderToPng(folder, assistants) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 400; canvas.height = 400;
+    const c = canvas.getContext('2d');
+    const g = c.createLinearGradient(0, 0, 400, 400);
+    g.addColorStop(0, folder.color || '#667eea');
+    g.addColorStop(1, '#222');
+    c.fillStyle = g; c.fillRect(0, 0, 400, 400);
+    c.fillStyle = '#fff'; c.font = 'bold 40px sans-serif';
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(folder.name || 'Folder', 200, 180);
+    c.font = '20px sans-serif'; c.globalAlpha = 0.6;
+    c.fillText(`${assistants.length} assistant(s)`, 200, 230);
+    c.globalAlpha = 1;
+
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+    const pngBytes = new Uint8Array(await blob.arrayBuffer());
+    const data = {
+        type: 'folder',
+        folder: { name: folder.name, icon: folder.icon, color: folder.color, note: folder.note },
+        assistants: assistants.map(a => ({ name: a.name, character: a.character, bans: a.bans, avatar: a.avatar })),
+    };
+    const result = injectTextChunk(pngBytes, 'whispers', JSON.stringify(data));
+    const dlBlob = new Blob([result], { type: 'image/png' });
+    const url = URL.createObjectURL(dlBlob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${folder.name || 'folder'}.png`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+async function importFromPng(file) {
+    const pngBytes = new Uint8Array(await file.arrayBuffer());
+    const jsonStr = extractTextChunk(pngBytes, 'whispers');
+    if (!jsonStr) { toastr.error('No Whispers data in this PNG.'); return null; }
+    try {
+        const d = JSON.parse(jsonStr);
+        if (d.type === 'folder') {
+            return { type: 'folder', data: d };
+        }
+        // Single assistant
+        return {
+            type: 'assistant',
+            data: { id: generateId(), name: d.name || 'Imported', character: d.character || '', bans: d.bans || '', avatar: d.avatar || null, binding: 'none', bindingTarget: null, folderId: null }
+        };
+    } catch { toastr.error('Failed to parse data.'); return null; }
+}
+
+// ── PNG chunk utilities ─────────────────────────────────────────
+
+function injectTextChunk(pngBytes, keyword, text) {
+    const enc = new TextEncoder();
+    const kw = enc.encode(keyword), tx = enc.encode(text);
+    const chunkData = new Uint8Array(kw.length + 1 + tx.length);
+    chunkData.set(kw); chunkData[kw.length] = 0; chunkData.set(tx, kw.length + 1);
+    const ct = enc.encode('tEXt');
+    const crcIn = new Uint8Array(4 + chunkData.length);
+    crcIn.set(ct); crcIn.set(chunkData, 4);
+    const chunk = new Uint8Array(12 + chunkData.length);
+    const v = new DataView(chunk.buffer);
+    v.setUint32(0, chunkData.length);
+    chunk.set(ct, 4); chunk.set(chunkData, 8);
+    v.setUint32(chunk.length - 4, crc32(crcIn));
+    const iend = findChunkPos(pngBytes, 'IEND');
+    const pos = iend !== -1 ? iend : pngBytes.length - 12;
+    const out = new Uint8Array(pngBytes.length + chunk.length);
+    out.set(pngBytes.subarray(0, pos));
+    out.set(chunk, pos);
+    out.set(pngBytes.subarray(pos), pos + chunk.length);
+    return out;
+}
+
+function extractTextChunk(pngBytes, keyword) {
+    const dec = new TextDecoder();
+    let off = 8;
+    while (off < pngBytes.length) {
+        const v = new DataView(pngBytes.buffer, pngBytes.byteOffset + off);
+        const len = v.getUint32(0);
+        const type = dec.decode(pngBytes.subarray(off + 4, off + 8));
+        if (type === 'tEXt') {
+            const data = pngBytes.subarray(off + 8, off + 8 + len);
+            let ni = -1;
+            for (let i = 0; i < data.length; i++) { if (data[i] === 0) { ni = i; break; } }
+            if (ni > 0 && dec.decode(data.subarray(0, ni)) === keyword) {
+                return dec.decode(data.subarray(ni + 1));
+            }
+        }
+        if (type === 'IEND') break;
+        off += 12 + len;
+    }
+    return null;
+}
+
+function findChunkPos(png, name) {
+    const d = new TextDecoder(); let o = 8;
+    while (o < png.length) {
+        const v = new DataView(png.buffer, png.byteOffset + o);
+        const l = v.getUint32(0);
+        if (d.decode(png.subarray(o + 4, o + 8)) === name) return o;
+        o += 12 + l;
+    }
+    return -1;
+}
+
+function crc32(buf) {
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < buf.length; i++) { c ^= buf[i]; for (let j = 0; j < 8; j++) c = (c >>> 1) ^ (c & 1 ? 0xEDB88320 : 0); }
+    return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+// ── Generation ──────────────────────────────────────────────────
+
+async function generateResponse(userMessage) {
+    const settings = getSettings();
+    const assistant = getActiveAssistant();
+    if (!assistant) throw new Error('No assistant configured');
+
+    const systemPrompt = buildSystemPrompt(assistant);
+    const history = getWhispersHistory();
+    const limit = settings.messageLimit || 20;
+    const recentHistory = history.slice(-limit);
+
+    if (settings.useExtraApi && settings.extraApiUrl) {
+        return await generateViaExtraApi(systemPrompt, recentHistory, userMessage, settings);
+    } else {
+        return await generateViaST(systemPrompt, recentHistory, userMessage);
     }
 }
 
-.whispers-edit-popup {
-    width: min(440px, 92vw);
-    max-height: 80vh;
-    border-radius: 14px;
-    overflow: hidden;
-    background: var(--SmartThemeChatTintColor, var(--SmartThemeBlurTintColor));
-    border: 1px solid var(--SmartThemeBorderColor);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    display: flex;
-    flex-direction: column;
-    animation: whispers-bubble-in 0.25s ease-out;
-}
+async function generateViaExtraApi(systemPrompt, history, userMessage, settings) {
+    const messages = [{ role: 'system', content: systemPrompt }];
+    for (const m of history) messages.push({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content });
+    messages.push({ role: 'user', content: userMessage });
 
-.whispers-edit-popup-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--SmartThemeBorderColor);
-    background: var(--SmartThemeBlurTintColor);
-    color: var(--SmartThemeBodyColor);
-    flex-shrink: 0;
-}
-
-.whispers-edit-popup-header strong {
-    font-size: 1em;
-}
-
-.whispers-edit-popup-close {
-    background: transparent;
-    border: none;
-    color: var(--SmartThemeBodyColor);
-    cursor: pointer;
-    font-size: 14px;
-    opacity: 0.6;
-    padding: 4px 6px;
-    border-radius: 50%;
-    transition: opacity 0.15s, background 0.15s;
-}
-
-.whispers-edit-popup-close:hover {
-    opacity: 1;
-    background: var(--SmartThemeBorderColor);
-}
-
-.whispers-edit-popup-body {
-    padding: 14px 16px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.whispers-edit-popup-body .whispers-field-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-/* ── Note Popup (inside edit-popup-overlay) ──────────────────── */
-
-/* Avatar upload */
-.whispers-avatar-upload {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.whispers-avatar-preview {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 2px solid var(--SmartThemeBorderColor);
-}
-
-.whispers-avatar-preview-placeholder {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    border: 2px dashed var(--SmartThemeBorderColor);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-    color: var(--SmartThemeBodyColor);
-    opacity: 0.35;
-    cursor: pointer;
-    transition: opacity 0.2s;
-    background: var(--SmartThemeBlurTintColor);
-}
-
-.whispers-avatar-preview-placeholder:hover {
-    opacity: 0.6;
-}
-
-.whispers-divider {
-    height: 1px;
-    background: var(--SmartThemeBorderColor);
-    margin: 6px 0;
-    opacity: 0.5;
-}
-
-/* Toggle */
-.whispers-toggle-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-}
-
-/* Hidden inputs */
-.whispers-hidden-input {
-    display: none !important;
-}
-
-/* Model row */
-.whispers-model-row {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-}
-
-.whispers-model-row select {
-    flex: 1;
-}
-
-/* ── Chat Bar Button ────────────────────────────────────────── */
-
-#whispers-chat-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 35px;
-    height: 35px;
-    border: none;
-    background: transparent;
-    color: var(--SmartThemeBodyColor);
-    cursor: pointer;
-    font-size: 17px;
-    opacity: 0.7;
-    transition: opacity 0.2s, transform 0.15s, color 0.2s;
-    border-radius: 50%;
-    flex-shrink: 0;
-    margin-left: 5px;
-    margin-right: 2px;
-}
-
-#whispers-chat-btn:hover {
-    opacity: 1;
-    color: var(--SmartThemeQuoteColor);
-    transform: scale(1.15);
-}
-
-/* ── Chat Overlay (iOS-style) ───────────────────────────────── */
-
-.whispers-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 99999;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0, 0, 0, 0.55);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.3s ease, visibility 0.3s ease;
-}
-
-.whispers-overlay.open {
-    opacity: 1;
-    visibility: visible;
-}
-
-.whispers-chat-window {
-    width: min(460px, 92vw);
-    height: min(680px, 88vh);
-    display: flex;
-    flex-direction: column;
-    border-radius: 18px;
-    overflow: hidden;
-    background: var(--SmartThemeChatTintColor, var(--SmartThemeBlurTintColor));
-    border: 1px solid var(--SmartThemeBorderColor);
-    box-shadow:
-        0 8px 40px rgba(0, 0, 0, 0.35),
-        0 0 0 1px rgba(255, 255, 255, 0.05) inset;
-    transform: translateY(30px) scale(0.96);
-    transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.whispers-overlay.open .whispers-chat-window {
-    transform: translateY(0) scale(1);
-}
-
-/* ── Chat Header ────────────────────────────────────────────── */
-
-.whispers-chat-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 14px 16px;
-    background: var(--SmartThemeBlurTintColor);
-    border-bottom: 1px solid var(--SmartThemeBorderColor);
-    flex-shrink: 0;
-}
-
-.whispers-chat-header-avatar {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 2px solid var(--SmartThemeBorderColor);
-}
-
-.whispers-chat-header-avatar-placeholder {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    border: 2px solid var(--SmartThemeBorderColor);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 16px;
-    color: var(--SmartThemeBodyColor);
-    opacity: 0.5;
-    background: var(--SmartThemeBlurTintColor);
-}
-
-.whispers-chat-header-info {
-    flex: 1;
-    min-width: 0;
-}
-
-.whispers-chat-header-name {
-    font-size: 1em;
-    font-weight: 600;
-    color: var(--SmartThemeBodyColor);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.whispers-chat-header-status {
-    font-size: 0.75em;
-    color: var(--SmartThemeBodyColor);
-    opacity: 0.55;
-}
-
-.whispers-chat-close,
-.whispers-chat-clear {
-    width: 32px;
-    height: 32px;
-    border: none;
-    background: transparent;
-    color: var(--SmartThemeBodyColor);
-    font-size: 14px;
-    cursor: pointer;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0.6;
-    transition: opacity 0.2s, background 0.2s;
-}
-
-.whispers-chat-close:hover,
-.whispers-chat-clear:hover {
-    opacity: 1;
-    background: var(--SmartThemeBorderColor);
-}
-
-/* ── Messages Area ──────────────────────────────────────────── */
-
-.whispers-messages {
-    flex: 1;
-    overflow-y: auto;
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    scroll-behavior: smooth;
-}
-
-.whispers-messages::-webkit-scrollbar {
-    width: 5px;
-}
-
-.whispers-messages::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.whispers-messages::-webkit-scrollbar-thumb {
-    background: var(--SmartThemeBorderColor);
-    border-radius: 10px;
-}
-
-.whispers-empty-state {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    color: var(--SmartThemeBodyColor);
-    opacity: 0.4;
-    text-align: center;
-    padding: 20px;
-    user-select: none;
-}
-
-.whispers-empty-state i {
-    font-size: 40px;
-}
-
-.whispers-empty-state span {
-    font-size: 0.9em;
-}
-
-/* ── Message Bubbles ────────────────────────────────────────── */
-
-.whispers-msg {
-    max-width: 82%;
-    padding: 10px 14px;
-    border-radius: 18px;
-    font-size: 0.92em;
-    line-height: 1.45;
-    word-wrap: break-word;
-    position: relative;
-    animation: whispers-bubble-in 0.25s ease-out;
-}
-
-@keyframes whispers-bubble-in {
-    from {
-        opacity: 0;
-        transform: translateY(8px) scale(0.95);
+    const url = new URL(settings.extraApiUrl);
+    if (!url.pathname.endsWith('/generate') && !url.pathname.endsWith('/chat/completions')) {
+        url.pathname = url.pathname.replace(/\/$/, '') + '/v1/chat/completions';
     }
 
-    to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
+    const headers = { 'Content-Type': 'application/json' };
+    if (settings.extraApiKey) headers['Authorization'] = `Bearer ${settings.extraApiKey}`;
+
+    const body = { messages, temperature: 0.7, max_tokens: 1024 };
+    if (settings.extraApiModel) body.model = settings.extraApiModel;
+
+    const resp = await fetch(url.toString(), { method: 'POST', headers, body: JSON.stringify(body) });
+    if (!resp.ok) throw new Error(`API error: ${resp.status}`);
+    const data = await resp.json();
+
+    if (data.choices?.length > 0) return data.choices[0].message?.content || data.choices[0].text || '';
+    return data.response || data.content || data.result || JSON.stringify(data);
+}
+
+async function generateViaST(systemPrompt, history, userMessage) {
+    const { generateRaw } = SillyTavern.getContext();
+    let conv = '';
+    for (const m of history) conv += `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}\n`;
+    conv += `User: ${userMessage}\nAssistant:`;
+    return (await generateRaw({ systemPrompt, prompt: conv, prefill: '' })) || '';
+}
+
+// ── Fetch Models ────────────────────────────────────────────────
+
+async function fetchModels() {
+    const settings = getSettings();
+    if (!settings.extraApiUrl) { toastr.warning('Set API URL first'); return []; }
+
+    const url = new URL(settings.extraApiUrl);
+    url.pathname = url.pathname.replace(/\/$/, '') + '/v1/models';
+
+    const headers = {};
+    if (settings.extraApiKey) headers['Authorization'] = `Bearer ${settings.extraApiKey}`;
+
+    try {
+        const resp = await fetch(url.toString(), { headers });
+        if (!resp.ok) throw new Error(`${resp.status}`);
+        const data = await resp.json();
+        return (data.data || data.models || []).map(m => m.id || m.name || m);
+    } catch (err) {
+        toastr.error(`Failed to fetch models: ${err.message}`);
+        return [];
     }
 }
 
-.whispers-msg-user {
-    align-self: flex-end;
-    background: var(--SmartThemeQuoteColor);
-    color: var(--SmartThemeQuoteFontColor, var(--SmartThemeBodyColor));
-    border-bottom-right-radius: 6px;
-}
+// ── State ───────────────────────────────────────────────────────
 
-.whispers-msg-assistant {
-    align-self: flex-start;
-    background: var(--SmartThemeBlurTintColor);
-    color: var(--SmartThemeBodyColor);
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-bottom-left-radius: 6px;
-}
+let editingAssistantId = null;
+let editingFolderId = null;
+let isGenerating = false;
 
-.whispers-msg-time {
-    font-size: 0.7em;
-    opacity: 0.45;
-    margin-top: 4px;
-    display: block;
-}
+// ── Update Check ────────────────────────────────────────────────
 
-.whispers-msg-user .whispers-msg-time {
-    text-align: right;
-}
-
-.whispers-msg-assistant .whispers-msg-time {
-    text-align: left;
-}
-
-/* Typing indicator */
-.whispers-typing {
-    align-self: flex-start;
-    display: flex;
-    gap: 4px;
-    padding: 12px 18px;
-    background: var(--SmartThemeBlurTintColor);
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 18px;
-    border-bottom-left-radius: 6px;
-}
-
-.whispers-typing-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--SmartThemeBodyColor);
-    opacity: 0.4;
-    animation: whispers-typing-bounce 1.4s infinite ease-in-out;
-}
-
-.whispers-typing-dot:nth-child(2) {
-    animation-delay: 0.2s;
-}
-
-.whispers-typing-dot:nth-child(3) {
-    animation-delay: 0.4s;
-}
-
-@keyframes whispers-typing-bounce {
-
-    0%,
-    80%,
-    100% {
-        transform: scale(0.8);
-        opacity: 0.4;
-    }
-
-    40% {
-        transform: scale(1.2);
-        opacity: 0.9;
+async function checkForUpdate() {
+    try {
+        const { getRequestHeaders } = SillyTavern.getContext();
+        const resp = await fetch('/api/extensions/version', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ extensionName: `third-party/${MODULE_NAME}` }),
+        });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const btn = document.getElementById('whispers-btn-update');
+        if (btn && data.isUpToDate === false) {
+            btn.style.display = '';
+            btn.title = 'Update available — click to update and reload';
+        }
+    } catch (e) {
+        console.log('[Whispers] Update check failed:', e);
     }
 }
 
-/* ── Input Bar ──────────────────────────────────────────────── */
-
-.whispers-input-bar {
-    display: flex;
-    align-items: flex-end;
-    gap: 8px;
-    padding: 12px 14px;
-    background: var(--SmartThemeBlurTintColor);
-    border-top: 1px solid var(--SmartThemeBorderColor);
-    flex-shrink: 0;
-}
-
-.whispers-input-field {
-    flex: 1;
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 20px;
-    padding: 9px 16px;
-    font-size: 0.9em;
-    font-family: inherit;
-    background: var(--SmartThemeChatTintColor, var(--SmartThemeBlurTintColor));
-    color: var(--SmartThemeBodyColor);
-    resize: none;
-    max-height: 120px;
-    min-height: 20px;
-    line-height: 1.4;
-    overflow-y: auto;
-    transition: border-color 0.2s;
-}
-
-.whispers-input-field:focus {
-    outline: none;
-    border-color: var(--SmartThemeQuoteColor);
-}
-
-.whispers-input-field::placeholder {
-    color: var(--SmartThemeBodyColor);
-    opacity: 0.35;
-}
-
-.whispers-send-btn {
-    width: 36px;
-    height: 36px;
-    border: none;
-    border-radius: 50%;
-    background: var(--SmartThemeQuoteColor);
-    color: var(--SmartThemeQuoteFontColor, #fff);
-    font-size: 15px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: transform 0.15s, opacity 0.2s;
-    flex-shrink: 0;
-}
-
-.whispers-send-btn:hover {
-    transform: scale(1.1);
-}
-
-.whispers-send-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-    transform: none;
-}
-
-/* ── Folder Themed Children ─────────────────────────────────── */
-
-.whispers-folder-children .whispers-assistant-item {
-    border-left: 3px solid var(--folder-color, var(--SmartThemeBorderColor));
-    border-radius: 0 8px 8px 0;
-    margin-left: 0;
-}
-
-/* ── Folder Actions ─────────────────────────────────────────── */
-
-.whispers-folder-actions {
-    display: flex;
-    gap: 2px;
-}
-
-.whispers-folder-actions button {
-    background: transparent;
-    border: none;
-    color: var(--SmartThemeBodyColor);
-    cursor: pointer;
-    padding: 2px 5px;
-    border-radius: 4px;
-    font-size: 0.8em;
-    opacity: 0.6;
-    transition: opacity 0.15s, color 0.15s;
-}
-
-.whispers-folder-actions button:hover {
-    opacity: 1;
-}
-
-.whispers-folder-actions button.delete-btn:hover {
-    color: #e74c3c;
-}
-
-.whispers-folder-actions .folder-info-btn {
-    color: var(--folder-color, var(--SmartThemeQuoteColor));
-    opacity: 0.8;
-}
-
-.whispers-folder-actions .folder-info-btn:hover {
-    opacity: 1;
-}
-
-/* ── Drag and Drop ──────────────────────────────────────────── */
-
-.whispers-assistant-item.dragging {
-    opacity: 0.4;
-}
-
-.whispers-assistant-item[draggable="true"] {
-    cursor: grab;
-}
-
-.whispers-assistant-item[draggable="true"]:active {
-    cursor: grabbing;
-}
-
-.whispers-folder.drag-over {
-    outline: 2px dashed var(--folder-color, var(--SmartThemeQuoteColor));
-    outline-offset: -2px;
-    background: var(--SmartThemeBlurTintColor);
-}
-
-/* ── Icon Picker ────────────────────────────────────────────── */
-
-.whispers-icon-picker {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    max-height: 160px;
-    overflow-y: auto;
-    padding: 6px;
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 8px;
-    background: var(--SmartThemeBlurTintColor);
-}
-
-.whispers-icon-picker::-webkit-scrollbar {
-    width: 4px;
-}
-
-.whispers-icon-picker::-webkit-scrollbar-thumb {
-    background: var(--SmartThemeBorderColor);
-    border-radius: 10px;
-}
-
-.whispers-icon-btn {
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--SmartThemeBodyColor);
-    cursor: pointer;
-    font-size: 14px;
-    opacity: 0.6;
-    transition: all 0.15s;
-}
-
-.whispers-icon-btn:hover {
-    opacity: 1;
-    background: var(--SmartThemeBorderColor);
-}
-
-.whispers-icon-btn.selected {
-    opacity: 1;
-    border-color: var(--SmartThemeQuoteColor);
-    background: var(--SmartThemeQuoteColor);
-    color: var(--SmartThemeQuoteFontColor, #fff);
-}
-
-/* ── Author's Note Popup (uses edit-popup-overlay) ──────────── */
-
-.whispers-note-popup {
-    width: min(420px, 90vw);
-    max-height: 70vh;
-    border-radius: 14px;
-    overflow: hidden;
-    background: var(--SmartThemeChatTintColor, var(--SmartThemeBlurTintColor));
-    border: 1px solid var(--SmartThemeBorderColor);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    display: flex;
-    flex-direction: column;
-    animation: whispers-bubble-in 0.25s ease-out;
-}
-
-.whispers-note-popup-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--SmartThemeBorderColor);
-    background: var(--SmartThemeBlurTintColor);
-    color: var(--SmartThemeBodyColor);
-    flex-shrink: 0;
-}
-
-.whispers-note-popup-header strong {
-    font-size: 1em;
-}
-
-.whispers-note-popup-close {
-    background: transparent;
-    border: none;
-    color: var(--SmartThemeBodyColor);
-    cursor: pointer;
-    font-size: 14px;
-    opacity: 0.6;
-    padding: 4px 6px;
-    border-radius: 50%;
-    transition: opacity 0.15s, background 0.15s;
-}
-
-.whispers-note-popup-close:hover {
-    opacity: 1;
-    background: var(--SmartThemeBorderColor);
-}
-
-.whispers-note-popup-body {
-    padding: 16px;
-    color: var(--SmartThemeBodyColor);
-    font-size: 0.9em;
-    line-height: 1.6;
-    overflow-y: auto;
-}
-
-.whispers-note-popup-body img {
-    max-width: 100%;
-    border-radius: 8px;
-}
-
-.whispers-note-popup-body a {
-    color: var(--SmartThemeQuoteColor);
-}
-
-/* ── Color picker row ───────────────────────────────────────── */
-
-.whispers-color-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.whispers-color-row input[type="color"] {
-    width: 32px;
-    height: 32px;
-    border: 2px solid var(--SmartThemeBorderColor);
-    border-radius: 8px;
-    padding: 2px;
-    cursor: pointer;
-    background: transparent;
-}
-
-/* ── Responsive ─────────────────────────────────────────────── */
-
-@media (max-width: 500px) {
-    .whispers-chat-window {
-        width: 100vw;
-        height: 100vh;
-        border-radius: 0;
+async function performUpdate() {
+    try {
+        const { getRequestHeaders } = SillyTavern.getContext();
+        toastr.info('Updating Whispers...');
+        const resp = await fetch('/api/extensions/update', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ extensionName: `third-party/${MODULE_NAME}` }),
+        });
+        if (resp.ok) {
+            toastr.success('Updated! Reloading...');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            toastr.error('Update failed');
+        }
+    } catch (e) {
+        toastr.error('Update failed: ' + e.message);
     }
 }
 
-media (max-width: 500px) {
-    .whispers-chat-window {
-        width: 100vw;
-        height: 100vh;
-        border-radius: 0;
+// ── UI: Settings Panel HTML ─────────────────────────────────────
+
+function buildSettingsHtml() {
+    return `
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b><i class="fa-solid fa-ghost"></i> Whispers</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content" id="whispers-settings-panel">
+            <div class="whispers-settings">
+
+                <!-- Tab Switcher -->
+                <div class="whispers-tabs">
+                    <label class="whispers-tab active" data-tab="general">
+                        <input type="radio" name="whispers-tab" value="general" checked>
+                        <i class="fa-solid fa-house"></i> General
+                    </label>
+                    <label class="whispers-tab" data-tab="assistants">
+                        <input type="radio" name="whispers-tab" value="assistants">
+                        <i class="fa-solid fa-users"></i> Assistants
+                    </label>
+                    <label class="whispers-tab" data-tab="api">
+                        <input type="radio" name="whispers-tab" value="api">
+                        <i class="fa-solid fa-server"></i> API
+                    </label>
+                </div>
+
+                <!-- ═══ Tab: General ═══ -->
+                <div class="whispers-tab-content" id="whispers-tab-general">
+                    <div class="whispers-toggle-row">
+                        <label><i class="fa-solid fa-power-off"></i> Enable Extension</label>
+                        <input type="checkbox" id="whispers-enabled" checked>
+                    </div>
+                    <div class="whispers-divider"></div>
+                    <div class="whispers-version-row">
+                        <span class="whispers-version-label"><i class="fa-solid fa-code-branch"></i> Version <strong id="whispers-version">1.0.0</strong></span>
+                        <button class="menu_button whispers-btn-small" id="whispers-btn-update" style="display:none;" title="Update available">
+                            <i class="fa-solid fa-download"></i> Update
+                        </button>
+                    </div>
+                    <div class="whispers-divider"></div>
+                    <div class="whispers-credits">
+                        <div class="whispers-credits-text">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> Made with love by <strong>fawn1e</strong>
+                        </div>
+                        <div class="whispers-credits-links">
+                            <a href="#" id="whispers-link-docs" title="Documentation & Guide" class="whispers-credit-link">
+                                <i class="fa-solid fa-book"></i>
+                            </a>
+                            <a href="#" id="whispers-link-telegram" title="Telegram Channel" class="whispers-credit-link" target="_blank">
+                                <i class="fa-brands fa-telegram"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ═══ Tab: Assistants ═══ -->
+                <div class="whispers-tab-content" id="whispers-tab-assistants" style="display:none;">
+                    <div class="whispers-item-list" id="whispers-item-list"></div>
+                    <div class="whispers-row">
+                        <button class="menu_button" id="whispers-btn-new-assistant" title="New assistant">
+                            <i class="fa-solid fa-plus"></i> Assistant
+                        </button>
+                        <button class="menu_button" id="whispers-btn-new-folder" title="New folder">
+                            <i class="fa-solid fa-folder-plus"></i> Folder
+                        </button>
+                        <button class="menu_button" id="whispers-btn-import" title="Import PNG">
+                            <i class="fa-solid fa-file-import"></i> Import
+                        </button>
+                    </div>
+                    <input type="file" accept=".png" class="whispers-hidden-input" id="whispers-import-file">
+                    <input type="file" accept="image/*" class="whispers-hidden-input" id="whispers-avatar-file">
+                </div>
+
+                <!-- ═══ Tab: API ═══ -->
+                <div class="whispers-tab-content" id="whispers-tab-api" style="display:none;">
+                    <div class="whispers-toggle-row">
+                        <label><i class="fa-solid fa-plug"></i> Use External API</label>
+                        <input type="checkbox" id="whispers-use-extra-api">
+                    </div>
+                    <div id="whispers-api-section" style="display:none;">
+                        <div class="whispers-field-group" style="margin-bottom:6px;">
+                            <label>API URL</label>
+                            <input type="url" id="whispers-api-url" placeholder="http://localhost:5001">
+                        </div>
+                        <div class="whispers-field-group" style="margin-bottom:6px;">
+                            <label><i class="fa-solid fa-key"></i> API Key</label>
+                            <input type="password" id="whispers-api-key" placeholder="sk-... (optional)">
+                        </div>
+                        <div class="whispers-field-group">
+                            <label><i class="fa-solid fa-microchip"></i> Model</label>
+                            <div class="whispers-model-row">
+                                <select id="whispers-model-select">
+                                    <option value="">Default</option>
+                                </select>
+                                <button class="menu_button whispers-btn-small whispers-btn-icon" id="whispers-btn-refresh-models" title="Refresh models">
+                                    <i class="fa-solid fa-arrows-rotate"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="whispers-field-group">
+                        <label><i class="fa-solid fa-list-ol"></i> Message Limit (context)</label>
+                        <input type="number" id="whispers-msg-limit" min="1" max="100" value="20">
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>`;
+}
+
+function buildChatOverlayHtml() {
+    return `
+    <div class="whispers-overlay" id="whispers-overlay">
+        <div class="whispers-chat-window">
+            <div class="whispers-chat-header">
+                <div class="whispers-chat-header-avatar-placeholder" id="whispers-chat-avatar">
+                    <i class="fa-solid fa-ghost"></i>
+                </div>
+                <div class="whispers-chat-header-info">
+                    <div class="whispers-chat-header-name" id="whispers-chat-name">Whispers</div>
+                    <div class="whispers-chat-header-status" id="whispers-chat-status">Online</div>
+                </div>
+                <button class="whispers-chat-clear" id="whispers-chat-clear" title="Clear history">
+                    <i class="fa-solid fa-broom"></i>
+                </button>
+                <button class="whispers-chat-close" id="whispers-chat-close" title="Close">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="whispers-messages" id="whispers-messages">
+                <div class="whispers-empty-state" id="whispers-empty-state">
+                    <i class="fa-solid fa-ghost"></i>
+                    <span>Start a conversation with your assistant</span>
+                </div>
+            </div>
+            <div class="whispers-input-bar">
+                <textarea class="whispers-input-field" id="whispers-input" placeholder="Type a message..." rows="1"></textarea>
+                <button class="whispers-send-btn" id="whispers-send" title="Send">
+                    <i class="fa-solid fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+    </div>`;
+}
+
+function buildChatBarButton() {
+    return `<div id="whispers-chat-btn" title="Open Whispers Assistant" class="interactable">
+        <i class="fa-solid fa-ghost"></i>
+    </div>`;
+}
+
+// ── UI: Render Item List (Folders + Assistants) ─────────────────
+
+// ── Popular FA icons for picker ─────────────────────────────────
+
+const FA_ICONS = [
+    'fa-folder','fa-folder-open','fa-star','fa-heart','fa-fire','fa-bolt',
+    'fa-crown','fa-gem','fa-shield','fa-wand-magic-sparkles','fa-hat-wizard',
+    'fa-dragon','fa-ghost','fa-skull','fa-cat','fa-dog','fa-paw','fa-feather',
+    'fa-dove','fa-fish','fa-spider','fa-bug','fa-leaf','fa-tree','fa-seedling',
+    'fa-sun','fa-moon','fa-cloud','fa-snowflake','fa-rainbow','fa-umbrella',
+    'fa-music','fa-guitar','fa-headphones','fa-gamepad','fa-puzzle-piece',
+    'fa-dice','fa-chess','fa-palette','fa-brush','fa-pen-fancy','fa-book',
+    'fa-book-open','fa-scroll','fa-graduation-cap','fa-flask','fa-atom',
+    'fa-rocket','fa-plane','fa-car','fa-bicycle','fa-ship','fa-anchor',
+    'fa-compass','fa-map','fa-mountain','fa-water','fa-campground',
+    'fa-house','fa-building','fa-store','fa-hospital','fa-church',
+    'fa-landmark','fa-trophy','fa-medal','fa-flag','fa-gift','fa-cake-candles',
+    'fa-champagne-glasses','fa-bell','fa-envelope','fa-comment','fa-comments',
+    'fa-circle-info','fa-lightbulb','fa-gear','fa-wrench','fa-hammer',
+    'fa-screwdriver-wrench','fa-key','fa-lock','fa-unlock','fa-eye',
+    'fa-hand','fa-thumbs-up','fa-face-smile','fa-face-laugh','fa-masks-theater',
+    'fa-robot','fa-microchip','fa-code','fa-terminal','fa-database',
+    'fa-server','fa-network-wired','fa-wifi','fa-globe','fa-earth-americas',
+    'fa-user','fa-users','fa-user-secret','fa-people-group',
+    'fa-suitcase','fa-briefcase','fa-box','fa-cubes','fa-tag','fa-tags',
+];
+
+// ── UI: Render Item List (Folders + Assistants) ─────────────────
+
+function renderItemList() {
+    const settings = getSettings();
+    const list = document.getElementById('whispers-item-list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    // Render folders
+    for (const folder of settings.folders) {
+        const folderAssistants = settings.assistants.filter(a => a.folderId === folder.id);
+        const folderEl = document.createElement('div');
+        folderEl.className = 'whispers-folder';
+        folderEl.dataset.id = folder.id;
+        folderEl.style.setProperty('--folder-color', folder.color || '#888');
+
+        folderEl.innerHTML = `
+            <div class="whispers-folder-header">
+                <span class="whispers-folder-icon" style="color:${folder.color || 'inherit'}">
+                    <i class="fa-solid ${folder.icon || 'fa-folder'}"></i>
+                </span>
+                <span class="whispers-folder-name">${escapeHtml(folder.name || 'Folder')}</span>
+                <span class="whispers-folder-count">${folderAssistants.length}</span>
+                <span class="whispers-folder-actions">
+                    <button class="folder-info-btn" title="Author's Note"><i class="fa-solid fa-circle-info"></i></button>
+                    <button class="edit-folder-btn" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                    <button class="export-folder-btn" title="Export"><i class="fa-solid fa-file-export"></i></button>
+                    <button class="delete-btn" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                </span>
+                <i class="fa-solid fa-chevron-right whispers-folder-chevron"></i>
+            </div>
+            <div class="whispers-folder-children"></div>
+        `;
+
+        // Folder header click to expand/collapse
+        const header = folderEl.querySelector('.whispers-folder-header');
+        header.addEventListener('click', (e) => {
+            if (e.target.closest('.whispers-folder-actions')) return;
+            folderEl.classList.toggle('open');
+        });
+
+        // Author's note popup (always visible)
+        folderEl.querySelector('.folder-info-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            showNotePopup(folder);
+        });
+
+        // Edit folder
+        folderEl.querySelector('.edit-folder-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            showFolderEditPopup(folder);
+        });
+
+        // Export folder
+        folderEl.querySelector('.export-folder-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            exportFolderToPng(folder, folderAssistants);
+        });
+
+        // Delete folder
+        folderEl.querySelector('.delete-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            showConfirmationPopup(`Delete folder "${folder.name}" and all its assistants?`, () => {
+                // Delete folder
+                settings.folders = settings.folders.filter(f => f.id !== folder.id);
+                // Delete assistants in folder
+                settings.assistants = settings.assistants.filter(a => a.folderId !== folder.id);
+                // Clear selection if needed
+                if (editingAssistantId) {
+                    const exists = settings.assistants.find(a => a.id === editingAssistantId);
+                    if (!exists) editingAssistantId = null;
+                }
+                const meta = getChatMeta();
+                if (meta && meta.whispers_assistant_id) {
+                    const exists = settings.assistants.find(a => a.id === meta.whispers_assistant_id);
+                    if (!exists) { delete meta.whispers_assistant_id; saveChatMeta(); }
+                }
+
+                saveSettings();
+                renderItemList();
+                updateChatHeader();
+                toastr.success('Folder and contents deleted');
+            });
+        });
+
+        // Drag-and-drop: folder as drop target
+        const childrenEl = folderEl.querySelector('.whispers-folder-children');
+        folderEl.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            folderEl.classList.add('drag-over');
+        });
+        folderEl.addEventListener('dragleave', (e) => {
+            if (!folderEl.contains(e.relatedTarget)) folderEl.classList.remove('drag-over');
+        });
+        folderEl.addEventListener('drop', (e) => {
+            e.preventDefault();
+            folderEl.classList.remove('drag-over');
+            const asstId = e.dataTransfer.getData('text/plain');
+            if (asstId) {
+                const asst = settings.assistants.find(a => a.id === asstId);
+                if (asst) {
+                    asst.folderId = folder.id;
+                    saveSettings();
+                    renderItemList();
+                    toastr.success(`Moved "${asst.name}" to "${folder.name}"`);
+                }
+            }
+        });
+
+        // Add assistants inside folder
+        for (const asst of folderAssistants) {
+            childrenEl.appendChild(createAssistantItem(asst));
+        }
+
+        list.appendChild(folderEl);
+    }
+
+    // Render unfoldered assistants
+    const unfoldered = settings.assistants.filter(a => !a.folderId);
+    for (const asst of unfoldered) {
+        list.appendChild(createAssistantItem(asst));
+    }
+
+    // Drop-to-root zone
+    list.addEventListener('dragover', (e) => { e.preventDefault(); });
+    list.addEventListener('drop', (e) => {
+        if (e.target.closest('.whispers-folder')) return; // handled by folder
+        e.preventDefault();
+        const asstId = e.dataTransfer.getData('text/plain');
+        if (asstId) {
+            const asst = settings.assistants.find(a => a.id === asstId);
+            if (asst && asst.folderId) {
+                asst.folderId = null;
+                saveSettings();
+                renderItemList();
+                toastr.info(`Removed "${asst.name}" from folder`);
+            }
+        }
+    });
+
+    if (settings.folders.length === 0 && settings.assistants.length === 0) {
+        list.innerHTML = '<div style="opacity:0.4;font-size:0.85em;text-align:center;padding:10px;">No assistants yet</div>';
     }
 }
+
+function createAssistantItem(asst) {
+    const settings = getSettings();
+    const container = document.createElement('div');
+
+    // Item row
+    const item = document.createElement('div');
+    item.className = 'whispers-assistant-item';
+    item.dataset.id = asst.id;
+    item.draggable = true;
+
+    const avatarHtml = asst.avatar
+        ? `<img class="whispers-assistant-avatar" src="${asst.avatar}" alt="">`
+        : `<div class="whispers-assistant-avatar-placeholder"><i class="fa-solid fa-ghost"></i></div>`;
+
+    // Binding badge
+    let badge = '';
+    if (asst.binding === 'global') badge = '<i class="fa-solid fa-globe whispers-badge" title="Global"></i>';
+    else if (asst.binding === 'character') badge = `<i class="fa-solid fa-user whispers-badge" title="Character: ${escapeHtml(asst.bindingTarget || '')}"></i>`;
+    else if (asst.binding === 'chat') badge = '<i class="fa-solid fa-comment whispers-badge" title="Chat-bound"></i>';
+
+    item.innerHTML = `
+        ${avatarHtml}
+        <span class="whispers-assistant-name">${escapeHtml(asst.name || 'Unnamed')}</span>
+        <span class="whispers-assistant-badges">${badge}</span>
+        <span class="whispers-assistant-actions">
+            <button class="asst-info-btn" title="Author's Note"><i class="fa-solid fa-circle-info"></i></button>
+            <button class="edit-asst-btn" title="Edit"><i class="fa-solid fa-pen"></i></button>
+            <button class="export-btn" title="Export PNG"><i class="fa-solid fa-file-export"></i></button>
+            <button class="delete-btn" title="Delete"><i class="fa-solid fa-trash"></i></button>
+        </span>
+    `;
+
+    // Drag start
+    item.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', asst.id);
+        e.dataTransfer.effectAllowed = 'move';
+        item.classList.add('dragging');
+    });
+    item.addEventListener('dragend', () => {
+        item.classList.remove('dragging');
+    });
+
+    // Click row to open edit popup
+    item.addEventListener('click', (e) => {
+        if (e.target.closest('.whispers-assistant-actions')) return;
+        showAssistantEditPopup(asst);
+    });
+
+    // Info (author's note)
+    item.querySelector('.asst-info-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        showAssistantNotePopup(asst);
+    });
+
+    // Edit
+    item.querySelector('.edit-asst-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        showAssistantEditPopup(asst);
+    });
+
+    // Export
+    item.querySelector('.export-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        exportAssistantToPng(asst);
+    });
+
+    // Delete
+    item.querySelector('.delete-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        showConfirmationPopup(`Delete "${asst.name}"?`, () => {
+            settings.assistants = settings.assistants.filter(a => a.id !== asst.id);
+            if (editingAssistantId === asst.id) editingAssistantId = null;
+            const meta = getChatMeta();
+            if (meta && meta.whispers_assistant_id === asst.id) delete meta.whispers_assistant_id;
+            saveSettings();
+            renderItemList();
+            updateChatHeader();
+            toastr.success('Assistant deleted');
+        });
+    });
+
+    container.appendChild(item);
+    return container;
+}
+
+// ── Assistant Edit Popup ────────────────────────────────────────
+
+function showAssistantEditPopup(asst) {
+    closeAllPopups();
+    const charName = getCurrentCharName();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'whispers-edit-popup-overlay';
+    overlay.innerHTML = `
+        <div class="whispers-edit-popup">
+            <div class="whispers-edit-popup-header">
+                <i class="fa-solid fa-ghost"></i>
+                <strong>Edit Assistant</strong>
+                <span style="flex:1"></span>
+                <button class="whispers-edit-popup-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="whispers-edit-popup-body">
+                <div class="whispers-avatar-upload">
+                    <div class="whispers-avatar-preview-placeholder" id="whispers-popup-avatar" title="Click to set avatar" style="cursor:pointer;">
+                        ${asst.avatar ? `<img class="whispers-avatar-preview" src="${asst.avatar}" alt="">` : '<i class="fa-solid fa-image"></i>'}
+                    </div>
+                    <span style="font-size:0.8em;opacity:0.6;">Click to set avatar</span>
+                </div>
+                <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-signature"></i> Name</label>
+                    <input type="text" class="w-edit-name" value="${escapeHtml(asst.name || '')}" placeholder="Name">
+                </div>
+                <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-masks-theater"></i> Character</label>
+                    <textarea class="w-edit-character" rows="3" placeholder="Personality...">${escapeHtml(asst.character || '')}</textarea>
+                </div>
+                <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-ban"></i> Bans</label>
+                    <textarea class="w-edit-bans" rows="2" placeholder="Never say...">${escapeHtml(asst.bans || '')}</textarea>
+                </div>
+                <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-comment-dots"></i> Message Example</label>
+                    <textarea class="w-edit-example" rows="3" placeholder="Write an example of how this assistant should respond...">${escapeHtml(asst.messageExample || '')}</textarea>
+                </div>
+                <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-link"></i> Binding</label>
+                    <select class="w-edit-binding">
+                        <option value="none" ${asst.binding === 'none' || !asst.binding ? 'selected' : ''}>None</option>
+                        <option value="global" ${asst.binding === 'global' ? 'selected' : ''}>Global (all chats)</option>
+                        <option value="character" ${asst.binding === 'character' ? 'selected' : ''}>Character${charName ? ` (${charName})` : ''}</option>
+                        <option value="chat" ${asst.binding === 'chat' ? 'selected' : ''}>This Chat</option>
+                    </select>
+                </div>
+                <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-note-sticky"></i> Author's Note <span style="font-size:0.75em;opacity:0.5;">(HTML supported)</span></label>
+                    <textarea class="w-edit-note" rows="3" placeholder="Notes about this assistant...">${escapeHtml(asst.note || '')}</textarea>
+                </div>
+                <div class="whispers-row">
+                    <button class="menu_button w-save-btn"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Close — stopPropagation prevents ST drawer from collapsing
+    overlay.addEventListener('mousedown', (e) => e.stopPropagation());
+    overlay.addEventListener('click', (e) => { e.stopPropagation(); if (e.target === overlay) overlay.remove(); });
+    overlay.querySelector('.whispers-edit-popup-close').addEventListener('click', (e) => { e.stopPropagation(); overlay.remove(); });
+
+    const body = overlay.querySelector('.whispers-edit-popup-body');
+
+    // Avatar click
+    body.querySelector('#whispers-popup-avatar').addEventListener('click', () => {
+        const fileInput = document.getElementById('whispers-avatar-file');
+        fileInput.dataset.targetAssistant = asst.id;
+        fileInput.click();
+    });
+
+    // Save
+    body.querySelector('.w-save-btn').addEventListener('click', () => {
+        asst.name = body.querySelector('.w-edit-name').value || 'Unnamed';
+        asst.character = body.querySelector('.w-edit-character').value || '';
+        asst.bans = body.querySelector('.w-edit-bans').value || '';
+        asst.messageExample = body.querySelector('.w-edit-example').value || '';
+        asst.note = body.querySelector('.w-edit-note').value || '';
+
+        const newBinding = body.querySelector('.w-edit-binding').value;
+        asst.binding = newBinding;
+        if (newBinding === 'character') {
+            asst.bindingTarget = getCurrentCharName();
+        } else if (newBinding === 'chat') {
+            const meta = getChatMeta();
+            if (meta) meta.whispers_assistant_id = asst.id;
+            saveChatMeta();
+        } else {
+            asst.bindingTarget = null;
+        }
+
+        saveSettings();
+        renderItemList();
+        updateChatHeader();
+        overlay.remove();
+        toastr.success('Assistant saved');
+    });
+
+    document.body.appendChild(overlay);
+}
+
+// ── Folder Edit Popup ───────────────────────────────────────────
+
+function showFolderEditPopup(folder) {
+    closeAllPopups();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'whispers-edit-popup-overlay';
+    overlay.innerHTML = `
+        <div class="whispers-edit-popup">
+            <div class="whispers-edit-popup-header">
+                <span style="color:${folder.color || 'inherit'}"><i class="fa-solid ${folder.icon || 'fa-folder'}"></i></span>
+                <strong>Edit Folder</strong>
+                <span style="flex:1"></span>
+                <button class="whispers-edit-popup-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="whispers-edit-popup-body">
+                <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-pen"></i> Name</label>
+                    <input type="text" class="wf-name" value="${escapeHtml(folder.name || '')}">
+                </div>
+                <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-icons"></i> Icon</label>
+                    <div class="whispers-icon-picker" id="wf-icon-picker"></div>
+                </div>
+                <div class="whispers-color-row">
+                    <label><i class="fa-solid fa-palette"></i> Color</label>
+                    <input type="color" class="wf-color" value="${folder.color || '#667eea'}">
+                </div>
+                <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-note-sticky"></i> Author's Note <span style="font-size:0.75em;opacity:0.5;">(HTML supported)</span></label>
+                    <textarea class="wf-note" rows="3" placeholder="Describe what's in this folder...">${escapeHtml(folder.note || '')}</textarea>
+                </div>
+                <div class="whispers-row">
+                    <button class="menu_button wf-save"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Close — stopPropagation prevents ST drawer from collapsing
+    overlay.addEventListener('mousedown', (e) => e.stopPropagation());
+    overlay.addEventListener('click', (e) => { e.stopPropagation(); if (e.target === overlay) overlay.remove(); });
+    overlay.querySelector('.whispers-edit-popup-close').addEventListener('click', (e) => { e.stopPropagation(); overlay.remove(); });
+
+    // Build icon picker grid
+    const pickerGrid = overlay.querySelector('#wf-icon-picker');
+    let selectedIcon = folder.icon || 'fa-folder';
+    for (const iconName of FA_ICONS) {
+        const iconBtn = document.createElement('button');
+        iconBtn.type = 'button';
+        iconBtn.className = 'whispers-icon-btn' + (iconName === selectedIcon ? ' selected' : '');
+        iconBtn.title = iconName;
+        iconBtn.innerHTML = `<i class="fa-solid ${iconName}"></i>`;
+        iconBtn.addEventListener('click', () => {
+            pickerGrid.querySelectorAll('.whispers-icon-btn').forEach(b => b.classList.remove('selected'));
+            iconBtn.classList.add('selected');
+            selectedIcon = iconName;
+        });
+        pickerGrid.appendChild(iconBtn);
+    }
+
+    // Save
+    const body = overlay.querySelector('.whispers-edit-popup-body');
+    body.querySelector('.wf-save').addEventListener('click', () => {
+        folder.name = body.querySelector('.wf-name').value || 'Folder';
+        folder.icon = selectedIcon;
+        folder.color = body.querySelector('.wf-color').value || '#667eea';
+        folder.note = body.querySelector('.wf-note').value || '';
+        saveSettings();
+        renderItemList();
+        overlay.remove();
+        toastr.success('Folder saved');
+    });
+
+    document.body.appendChild(overlay);
+}
+
+// ── Author's Note Popup ─────────────────────────────────────────
+
+function showNotePopup(folder) {
+    closeAllPopups();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'whispers-edit-popup-overlay';
+    overlay.innerHTML = `
+        <div class="whispers-note-popup">
+            <div class="whispers-note-popup-header">
+                <span style="color:${folder.color || 'inherit'}">
+                    <i class="fa-solid ${folder.icon || 'fa-folder'}"></i>
+                </span>
+                <strong>${escapeHtml(folder.name || 'Folder')}</strong>
+                <span style="flex:1"></span>
+                <button class="whispers-note-popup-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="whispers-note-popup-body">${folder.note || '<em style="opacity:0.5;">No notes yet</em>'}</div>
+        </div>
+    `;
+
+    overlay.addEventListener('mousedown', (e) => e.stopPropagation());
+    overlay.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (e.target === overlay) overlay.remove();
+    });
+    overlay.querySelector('.whispers-note-popup-close').addEventListener('click', (e) => { e.stopPropagation(); overlay.remove(); });
+
+    document.body.appendChild(overlay);
+}
+
+// ── Assistant Note Popup ────────────────────────────────────────
+
+function showAssistantNotePopup(asst) {
+    closeAllPopups();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'whispers-edit-popup-overlay';
+
+    const avatarHtml = asst.avatar
+        ? `<img src="${asst.avatar}" alt="" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">`
+        : '<i class="fa-solid fa-ghost"></i>';
+
+    overlay.innerHTML = `
+        <div class="whispers-note-popup">
+            <div class="whispers-note-popup-header">
+                ${avatarHtml}
+                <strong>${escapeHtml(asst.name || 'Assistant')}</strong>
+                <span style="flex:1"></span>
+                <button class="whispers-note-popup-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="whispers-note-popup-body">${asst.note || '<em style="opacity:0.5;">No notes yet</em>'}</div>
+        </div>
+    `;
+
+    overlay.addEventListener('mousedown', (e) => e.stopPropagation());
+    overlay.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (e.target === overlay) overlay.remove();
+    });
+    overlay.querySelector('.whispers-note-popup-close').addEventListener('click', (e) => { e.stopPropagation(); overlay.remove(); });
+
+    document.body.appendChild(overlay);
+}
+
+// ── Confirmation Popup ────────────────────────────────────────
+
+function showConfirmationPopup(message, onConfirm) {
+    closeAllPopups();
+    const overlay = document.createElement('div');
+    overlay.className = 'whispers-edit-popup-overlay';
+    overlay.innerHTML = `
+        <div class="whispers-edit-popup" style="width: min(320px, 90vw);">
+            <div class="whispers-edit-popup-header">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <strong>Confirm Action</strong>
+            </div>
+            <div class="whispers-edit-popup-body" style="text-align:center; padding: 20px;">
+                <p>${escapeHtml(message)}</p>
+                <div class="whispers-row" style="justify-content:center; gap:10px; margin-top:10px;">
+                    <button class="menu_button wf-confirm-yes" style="background:var(--SmartThemeQuoteColor); color:var(--SmartThemeQuoteFontColor);"><i class="fa-solid fa-check"></i> Yes</button>
+                    <button class="menu_button wf-confirm-no"><i class="fa-solid fa-xmark"></i> No</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    overlay.addEventListener('mousedown', (e) => e.stopPropagation());
+    overlay.addEventListener('click', (e) => { e.stopPropagation(); if (e.target === overlay) overlay.remove(); });
+    
+    overlay.querySelector('.wf-confirm-yes').addEventListener('click', () => {
+        onConfirm();
+        overlay.remove();
+    });
+    
+    overlay.querySelector('.wf-confirm-no').addEventListener('click', () => {
+        overlay.remove();
+    });
+
+    document.body.appendChild(overlay);
+}
+
+// ── Helper: close all popups ────────────────────────────────────
+
+function closeAllPopups() {
+    document.querySelectorAll('.whispers-edit-popup-overlay').forEach(el => el.remove());
+}
+
+// ── Chat UI ─────────────────────────────────────────────────────
+
+function renderChatMessages() {
+    const el = document.getElementById('whispers-messages');
+    const empty = document.getElementById('whispers-empty-state');
+    if (!el) return;
+    el.querySelectorAll('.whispers-msg, .whispers-typing').forEach(e => e.remove());
+    const history = getWhispersHistory();
+    if (history.length === 0) { if (empty) empty.style.display = ''; return; }
+    if (empty) empty.style.display = 'none';
+    for (const msg of history) {
+        const b = document.createElement('div');
+        b.className = `whispers-msg whispers-msg-${msg.role}`;
+        const t = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        b.innerHTML = `${escapeHtml(msg.content)}<span class="whispers-msg-time">${t}</span>`;
+        el.appendChild(b);
+    }
+    el.scrollTop = el.scrollHeight;
+}
+
+function addBubble(role, content) {
+    const el = document.getElementById('whispers-messages');
+    const empty = document.getElementById('whispers-empty-state');
+    if (!el) return;
+    if (empty) empty.style.display = 'none';
+    const b = document.createElement('div');
+    b.className = `whispers-msg whispers-msg-${role}`;
+    const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    b.innerHTML = `${escapeHtml(content)}<span class="whispers-msg-time">${t}</span>`;
+    el.appendChild(b);
+    el.scrollTop = el.scrollHeight;
+}
+
+function showTyping() {
+    const el = document.getElementById('whispers-messages');
+    if (!el) return;
+    hideTyping();
+    const t = document.createElement('div');
+    t.className = 'whispers-typing'; t.id = 'whispers-typing-indicator';
+    t.innerHTML = '<div class="whispers-typing-dot"></div><div class="whispers-typing-dot"></div><div class="whispers-typing-dot"></div>';
+    el.appendChild(t);
+    el.scrollTop = el.scrollHeight;
+}
+
+function hideTyping() {
+    document.getElementById('whispers-typing-indicator')?.remove();
+}
+
+function updateChatHeader() {
+    const a = getActiveAssistant();
+    const nameEl = document.getElementById('whispers-chat-name');
+    const avatarEl = document.getElementById('whispers-chat-avatar');
+    const statusEl = document.getElementById('whispers-chat-status');
+    if (a) {
+        if (nameEl) nameEl.textContent = a.name || 'Assistant';
+        if (statusEl) statusEl.textContent = 'Online';
+        if (avatarEl) {
+            if (a.avatar) {
+                avatarEl.innerHTML = `<img class="whispers-chat-header-avatar" src="${a.avatar}" alt="">`;
+                avatarEl.className = '';
+            } else {
+                avatarEl.innerHTML = '<i class="fa-solid fa-ghost"></i>';
+                avatarEl.className = 'whispers-chat-header-avatar-placeholder';
+            }
+        }
+    } else {
+        if (nameEl) nameEl.textContent = 'Whispers';
+        if (statusEl) statusEl.textContent = 'No assistant configured';
+        if (avatarEl) { avatarEl.innerHTML = '<i class="fa-solid fa-ghost"></i>'; avatarEl.className = 'whispers-chat-header-avatar-placeholder'; }
+    }
+}
+
+function openChat() {
+    const o = document.getElementById('whispers-overlay');
+    if (o) { o.classList.add('open'); updateChatHeader(); renderChatMessages(); setTimeout(() => document.getElementById('whispers-input')?.focus(), 350); }
+}
+
+function closeChat() {
+    document.getElementById('whispers-overlay')?.classList.remove('open');
+}
+
+// ── Send Message ────────────────────────────────────────────────
+
+async function sendMessage() {
+    if (isGenerating) return;
+    const input = document.getElementById('whispers-input');
+    const sendBtn = document.getElementById('whispers-send');
+    if (!input) return;
+    const text = input.value.trim();
+    if (!text) return;
+
+    const assistant = getActiveAssistant();
+    if (!assistant) { toastr.warning('No assistant configured.'); return; }
+
+    const history = getWhispersHistory();
+    history.push({ role: 'user', content: text, timestamp: Date.now() });
+    await saveChatMeta();
+
+    input.value = ''; autoResize();
+    addBubble('user', text);
+    showTyping();
+
+    isGenerating = true;
+    if (sendBtn) sendBtn.disabled = true;
+    const statusEl = document.getElementById('whispers-chat-status');
+    if (statusEl) statusEl.textContent = 'Typing...';
+
+    try {
+        const response = await generateResponse(text);
+        hideTyping();
+        history.push({ role: 'assistant', content: response, timestamp: Date.now() });
+        await saveChatMeta();
+        addBubble('assistant', response);
+    } catch (err) {
+        hideTyping();
+        toastr.error(`Whispers: ${err.message}`);
+        addBubble('assistant', `Error: ${err.message}`);
+    } finally {
+        isGenerating = false;
+        if (sendBtn) sendBtn.disabled = false;
+        if (statusEl) statusEl.textContent = 'Online';
+    }
+}
+
+function autoResize() {
+    const input = document.getElementById('whispers-input');
+    if (!input) return;
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+}
+
+// ── Load Settings UI ────────────────────────────────────────────
+
+function loadSettingsUI() {
+    const s = getSettings();
+    const el = (id) => document.getElementById(id);
+
+    // Enabled toggle
+    const enabledCheck = el('whispers-enabled');
+    if (enabledCheck) enabledCheck.checked = s.enabled !== false;
+
+    if (el('whispers-api-url')) el('whispers-api-url').value = s.extraApiUrl || '';
+    if (el('whispers-api-key')) el('whispers-api-key').value = s.extraApiKey || '';
+    if (el('whispers-msg-limit')) el('whispers-msg-limit').value = s.messageLimit || 20;
+
+    const extraCheck = el('whispers-use-extra-api');
+    if (extraCheck) {
+        extraCheck.checked = s.useExtraApi || false;
+        toggleApiSection(s.useExtraApi);
+    }
+
+    if (s.extraApiModel) {
+        const select = el('whispers-model-select');
+        if (select && !select.querySelector(`option[value="${s.extraApiModel}"]`)) {
+            const opt = document.createElement('option');
+            opt.value = s.extraApiModel;
+            opt.textContent = s.extraApiModel;
+            opt.selected = true;
+            select.appendChild(opt);
+        } else if (select) {
+            select.value = s.extraApiModel;
+        }
+    }
+
+    // Setup tab switching
+    setupTabs();
+
+    renderItemList();
+}
+
+function setupTabs() {
+    const tabs = document.querySelectorAll('.whispers-tab');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const target = tab.dataset.tab;
+            // Update active tab
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            // Show/hide content
+            document.querySelectorAll('.whispers-tab-content').forEach(c => c.style.display = 'none');
+            const content = document.getElementById(`whispers-tab-${target}`);
+            if (content) content.style.display = '';
+        });
+    });
+}
+
+function toggleApiSection(show) {
+    const sec = document.getElementById('whispers-api-section');
+    if (sec) sec.style.display = show ? '' : 'none';
+}
+
+// ── Event Binding ───────────────────────────────────────────────
+
+function bindEvents() {
+    const el = (id) => document.getElementById(id);
+
+    // Chat
+    el('whispers-chat-btn')?.addEventListener('click', openChat);
+    el('whispers-chat-close')?.addEventListener('click', closeChat);
+    el('whispers-overlay')?.addEventListener('click', (e) => { if (e.target === e.currentTarget) closeChat(); });
+    el('whispers-send')?.addEventListener('click', sendMessage);
+    el('whispers-input')?.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+    el('whispers-input')?.addEventListener('input', autoResize);
+    el('whispers-chat-clear')?.addEventListener('click', async () => {
+        const meta = getChatMeta();
+        if (meta) { meta.whispers_history = []; await saveChatMeta(); }
+        renderChatMessages();
+    });
+
+    // New assistant
+    el('whispers-btn-new-assistant')?.addEventListener('click', () => {
+        const settings = getSettings();
+        const a = { id: generateId(), name: 'New Assistant', character: '', bans: '', avatar: null, binding: 'none', bindingTarget: null, folderId: null };
+        settings.assistants.push(a);
+        saveSettings();
+        editingAssistantId = a.id;
+        renderItemList();
+    });
+
+    // New folder
+    el('whispers-btn-new-folder')?.addEventListener('click', () => {
+        const settings = getSettings();
+        const f = { id: generateId(), name: 'New Folder', icon: 'fa-folder', color: '#667eea', note: '' };
+        settings.folders.push(f);
+        saveSettings();
+        renderItemList();
+        showFolderEditPopup(f);
+    });
+
+    // Enable toggle
+    el('whispers-enabled')?.addEventListener('change', (e) => {
+        getSettings().enabled = e.target.checked;
+        saveSettings();
+    });
+
+    // Update button
+    el('whispers-btn-update')?.addEventListener('click', performUpdate);
+
+    // Import
+    el('whispers-btn-import')?.addEventListener('click', () => el('whispers-import-file')?.click());
+    el('whispers-import-file')?.addEventListener('change', async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const result = await importFromPng(file);
+        if (!result) { e.target.value = ''; return; }
+        const settings = getSettings();
+
+        if (result.type === 'folder') {
+            const fd = result.data;
+            const newFolder = { id: generateId(), name: fd.folder.name, icon: fd.folder.icon, color: fd.folder.color, note: fd.folder.note || '' };
+            settings.folders.push(newFolder);
+            for (const ad of fd.assistants) {
+                settings.assistants.push({
+                    id: generateId(), name: ad.name, character: ad.character, bans: ad.bans,
+                    avatar: ad.avatar, binding: 'none', bindingTarget: null, folderId: newFolder.id
+                });
+            }
+            toastr.success(`Imported folder: ${newFolder.name}`);
+        } else {
+            settings.assistants.push(result.data);
+            toastr.success(`Imported: ${result.data.name}`);
+        }
+        saveSettings();
+        renderItemList();
+        e.target.value = '';
+    });
+
+    // Avatar file
+    el('whispers-avatar-file')?.addEventListener('change', (e) => {
+        const file = e.target.files?.[0];
+        const targetId = e.target.dataset.targetAssistant;
+        if (!file || !targetId) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const settings = getSettings();
+            const asst = settings.assistants.find(a => a.id === targetId);
+            if (asst) {
+                asst.avatar = ev.target.result;
+                saveSettings();
+                renderItemList();
+            }
+        };
+        reader.readAsDataURL(file);
+        e.target.value = '';
+    });
+
+    // API settings
+    el('whispers-use-extra-api')?.addEventListener('change', (e) => {
+        const s = getSettings();
+        s.useExtraApi = e.target.checked;
+        saveSettings();
+        toggleApiSection(e.target.checked);
+    });
+
+    el('whispers-api-url')?.addEventListener('input', (e) => {
+        getSettings().extraApiUrl = e.target.value;
+        saveSettings();
+    });
+
+    el('whispers-api-key')?.addEventListener('input', (e) => {
+        getSettings().extraApiKey = e.target.value;
+        saveSettings();
+    });
+
+    el('whispers-model-select')?.addEventListener('change', (e) => {
+        getSettings().extraApiModel = e.target.value;
+        saveSettings();
+    });
+
+    el('whispers-btn-refresh-models')?.addEventListener('click', async () => {
+        const btn = el('whispers-btn-refresh-models');
+        if (btn) btn.disabled = true;
+        const models = await fetchModels();
+        const select = el('whispers-model-select');
+        if (select) {
+            const current = getSettings().extraApiModel;
+            select.innerHTML = '<option value="">Default</option>';
+            for (const m of models) {
+                const opt = document.createElement('option');
+                opt.value = m; opt.textContent = m;
+                if (m === current) opt.selected = true;
+                select.appendChild(opt);
+            }
+        }
+        if (btn) btn.disabled = false;
+        if (models.length > 0) toastr.success(`Found ${models.length} model(s)`);
+    });
+
+    el('whispers-msg-limit')?.addEventListener('input', (e) => {
+        getSettings().messageLimit = parseInt(e.target.value, 10) || 20;
+        saveSettings();
+    });
+
+
+}
+
+// ── Init ────────────────────────────────────────────────────────
+
+(function init() {
+    const { eventSource, event_types } = SillyTavern.getContext();
+
+    // Settings panel
+    const container = document.getElementById('extensions_settings2');
+    if (container) {
+        const w = document.createElement('div');
+        w.innerHTML = buildSettingsHtml();
+        container.appendChild(w);
+    }
+
+    // Chat overlay
+    document.body.insertAdjacentHTML('beforeend', buildChatOverlayHtml());
+
+    // Chat bar button — insert next to #extensionsMenuButton (wand icon)
+    const extMenuBtn = document.getElementById('extensionsMenuButton');
+    if (extMenuBtn) {
+        extMenuBtn.insertAdjacentHTML('afterend', buildChatBarButton());
+    } else {
+        // Fallback: insert into #leftSendForm
+        const leftSendForm = document.getElementById('leftSendForm');
+        if (leftSendForm) {
+            leftSendForm.insertAdjacentHTML('beforeend', buildChatBarButton());
+        } else {
+            const sendForm = document.getElementById('send_form');
+            if (sendForm) sendForm.insertAdjacentHTML('afterbegin', buildChatBarButton());
+        }
+    }
+
+    bindEvents();
+    loadSettingsUI();
+    checkForUpdate();
+
+    eventSource.on(event_types.CHAT_CHANGED, () => {
+        updateChatHeader();
+        renderChatMessages();
+        renderItemList();
+    });
+
+    console.log('[Whispers] Extension loaded v2');
+})();
