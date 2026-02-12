@@ -654,10 +654,27 @@ function renderItemList() {
         // Delete folder
         folderEl.querySelector('.delete-btn').addEventListener('click', (e) => {
             e.stopPropagation();
-            settings.folders = settings.folders.filter(f => f.id !== folder.id);
-            settings.assistants.forEach(a => { if (a.folderId === folder.id) a.folderId = null; });
-            saveSettings();
-            renderItemList();
+            showConfirmationPopup(`Delete folder "${folder.name}" and all its assistants?`, () => {
+                // Delete folder
+                settings.folders = settings.folders.filter(f => f.id !== folder.id);
+                // Delete assistants in folder
+                settings.assistants = settings.assistants.filter(a => a.folderId !== folder.id);
+                // Clear selection if needed
+                if (editingAssistantId) {
+                    const exists = settings.assistants.find(a => a.id === editingAssistantId);
+                    if (!exists) editingAssistantId = null;
+                }
+                const meta = getChatMeta();
+                if (meta && meta.whispers_assistant_id) {
+                    const exists = settings.assistants.find(a => a.id === meta.whispers_assistant_id);
+                    if (!exists) { delete meta.whispers_assistant_id; saveChatMeta(); }
+                }
+
+                saveSettings();
+                renderItemList();
+                updateChatHeader();
+                toastr.success('Folder and contents deleted');
+            });
         });
 
         // Drag-and-drop: folder as drop target
@@ -789,13 +806,16 @@ function createAssistantItem(asst) {
     // Delete
     item.querySelector('.delete-btn').addEventListener('click', (e) => {
         e.stopPropagation();
-        settings.assistants = settings.assistants.filter(a => a.id !== asst.id);
-        if (editingAssistantId === asst.id) editingAssistantId = null;
-        const meta = getChatMeta();
-        if (meta && meta.whispers_assistant_id === asst.id) delete meta.whispers_assistant_id;
-        saveSettings();
-        renderItemList();
-        updateChatHeader();
+        showConfirmationPopup(`Delete "${asst.name}"?`, () => {
+            settings.assistants = settings.assistants.filter(a => a.id !== asst.id);
+            if (editingAssistantId === asst.id) editingAssistantId = null;
+            const meta = getChatMeta();
+            if (meta && meta.whispers_assistant_id === asst.id) delete meta.whispers_assistant_id;
+            saveSettings();
+            renderItemList();
+            updateChatHeader();
+            toastr.success('Assistant deleted');
+        });
     });
 
     container.appendChild(item);
@@ -1043,6 +1063,43 @@ function showAssistantNotePopup(asst) {
         if (e.target === overlay) overlay.remove();
     });
     overlay.querySelector('.whispers-note-popup-close').addEventListener('click', (e) => { e.stopPropagation(); overlay.remove(); });
+
+    document.body.appendChild(overlay);
+}
+
+// ── Confirmation Popup ────────────────────────────────────────
+
+function showConfirmationPopup(message, onConfirm) {
+    closeAllPopups();
+    const overlay = document.createElement('div');
+    overlay.className = 'whispers-edit-popup-overlay';
+    overlay.innerHTML = `
+        <div class="whispers-edit-popup" style="width: min(320px, 90vw);">
+            <div class="whispers-edit-popup-header">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <strong>Confirm Action</strong>
+            </div>
+            <div class="whispers-edit-popup-body" style="text-align:center; padding: 20px;">
+                <p>${escapeHtml(message)}</p>
+                <div class="whispers-row" style="justify-content:center; gap:10px; margin-top:10px;">
+                    <button class="menu_button wf-confirm-yes" style="background:var(--SmartThemeQuoteColor); color:var(--SmartThemeQuoteFontColor);"><i class="fa-solid fa-check"></i> Yes</button>
+                    <button class="menu_button wf-confirm-no"><i class="fa-solid fa-xmark"></i> No</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    overlay.addEventListener('mousedown', (e) => e.stopPropagation());
+    overlay.addEventListener('click', (e) => { e.stopPropagation(); if (e.target === overlay) overlay.remove(); });
+    
+    overlay.querySelector('.wf-confirm-yes').addEventListener('click', () => {
+        onConfirm();
+        overlay.remove();
+    });
+    
+    overlay.querySelector('.wf-confirm-no').addEventListener('click', () => {
+        overlay.remove();
+    });
 
     document.body.appendChild(overlay);
 }
