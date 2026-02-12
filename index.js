@@ -376,56 +376,100 @@ function buildSettingsHtml() {
         <div class="inline-drawer-content" id="whispers-settings-panel">
             <div class="whispers-settings">
 
-                <!-- Assistants & Folders -->
-                <h4><i class="fa-solid fa-users"></i> Assistants</h4>
-                <div class="whispers-item-list" id="whispers-item-list"></div>
-                <div class="whispers-row">
-                    <button class="menu_button" id="whispers-btn-new-assistant" title="New assistant">
-                        <i class="fa-solid fa-plus"></i> Assistant
-                    </button>
-                    <button class="menu_button" id="whispers-btn-new-folder" title="New folder">
-                        <i class="fa-solid fa-folder-plus"></i> Folder
-                    </button>
-                    <button class="menu_button" id="whispers-btn-import" title="Import PNG">
-                        <i class="fa-solid fa-file-import"></i> Import
-                    </button>
+                <!-- Tab Switcher -->
+                <div class="whispers-tabs">
+                    <label class="whispers-tab active" data-tab="general">
+                        <input type="radio" name="whispers-tab" value="general" checked>
+                        <i class="fa-solid fa-house"></i> General
+                    </label>
+                    <label class="whispers-tab" data-tab="assistants">
+                        <input type="radio" name="whispers-tab" value="assistants">
+                        <i class="fa-solid fa-users"></i> Assistants
+                    </label>
+                    <label class="whispers-tab" data-tab="api">
+                        <input type="radio" name="whispers-tab" value="api">
+                        <i class="fa-solid fa-server"></i> API
+                    </label>
                 </div>
-                <input type="file" accept=".png" class="whispers-hidden-input" id="whispers-import-file">
-                <input type="file" accept="image/*" class="whispers-hidden-input" id="whispers-avatar-file">
 
-                <div class="whispers-divider"></div>
-
-                <!-- API Settings -->
-                <h4><i class="fa-solid fa-server"></i> API Settings</h4>
-                <div class="whispers-toggle-row">
-                    <label><i class="fa-solid fa-plug"></i> Use External API</label>
-                    <input type="checkbox" id="whispers-use-extra-api">
-                </div>
-                <div id="whispers-api-section" style="display:none;">
-                    <div class="whispers-field-group" style="margin-bottom:6px;">
-                        <label>API URL</label>
-                        <input type="url" id="whispers-api-url" placeholder="http://localhost:5001">
+                <!-- ═══ Tab: General ═══ -->
+                <div class="whispers-tab-content" id="whispers-tab-general">
+                    <div class="whispers-toggle-row">
+                        <label><i class="fa-solid fa-power-off"></i> Enable Extension</label>
+                        <input type="checkbox" id="whispers-enabled" checked>
                     </div>
-                    <div class="whispers-field-group" style="margin-bottom:6px;">
-                        <label><i class="fa-solid fa-key"></i> API Key</label>
-                        <input type="password" id="whispers-api-key" placeholder="sk-... (optional)">
+                    <div class="whispers-divider"></div>
+                    <div class="whispers-version-row">
+                        <span class="whispers-version-label"><i class="fa-solid fa-code-branch"></i> Version <strong id="whispers-version">1.0.0</strong></span>
+                        <button class="menu_button whispers-btn-small" id="whispers-btn-update" style="display:none;" title="Update available">
+                            <i class="fa-solid fa-download"></i> Update
+                        </button>
                     </div>
-                    <div class="whispers-field-group">
-                        <label><i class="fa-solid fa-microchip"></i> Model</label>
-                        <div class="whispers-model-row">
-                            <select id="whispers-model-select">
-                                <option value="">Default</option>
-                            </select>
-                            <button class="menu_button whispers-btn-small whispers-btn-icon" id="whispers-btn-refresh-models" title="Refresh models">
-                                <i class="fa-solid fa-arrows-rotate"></i>
-                            </button>
+                    <div class="whispers-divider"></div>
+                    <div class="whispers-credits">
+                        <div class="whispers-credits-text">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> Made with love by <strong>fawn1e</strong>
+                        </div>
+                        <div class="whispers-credits-links">
+                            <a href="#" id="whispers-link-docs" title="Documentation & Guide" class="whispers-credit-link">
+                                <i class="fa-solid fa-book"></i>
+                            </a>
+                            <a href="#" id="whispers-link-telegram" title="Telegram Channel" class="whispers-credit-link" target="_blank">
+                                <i class="fa-brands fa-telegram"></i>
+                            </a>
                         </div>
                     </div>
                 </div>
 
-                <div class="whispers-field-group">
-                    <label><i class="fa-solid fa-list-ol"></i> Message Limit (context)</label>
-                    <input type="number" id="whispers-msg-limit" min="1" max="100" value="20">
+                <!-- ═══ Tab: Assistants ═══ -->
+                <div class="whispers-tab-content" id="whispers-tab-assistants" style="display:none;">
+                    <div class="whispers-item-list" id="whispers-item-list"></div>
+                    <div class="whispers-row">
+                        <button class="menu_button" id="whispers-btn-new-assistant" title="New assistant">
+                            <i class="fa-solid fa-plus"></i> Assistant
+                        </button>
+                        <button class="menu_button" id="whispers-btn-new-folder" title="New folder">
+                            <i class="fa-solid fa-folder-plus"></i> Folder
+                        </button>
+                        <button class="menu_button" id="whispers-btn-import" title="Import PNG">
+                            <i class="fa-solid fa-file-import"></i> Import
+                        </button>
+                    </div>
+                    <input type="file" accept=".png" class="whispers-hidden-input" id="whispers-import-file">
+                    <input type="file" accept="image/*" class="whispers-hidden-input" id="whispers-avatar-file">
+                </div>
+
+                <!-- ═══ Tab: API ═══ -->
+                <div class="whispers-tab-content" id="whispers-tab-api" style="display:none;">
+                    <div class="whispers-toggle-row">
+                        <label><i class="fa-solid fa-plug"></i> Use External API</label>
+                        <input type="checkbox" id="whispers-use-extra-api">
+                    </div>
+                    <div id="whispers-api-section" style="display:none;">
+                        <div class="whispers-field-group" style="margin-bottom:6px;">
+                            <label>API URL</label>
+                            <input type="url" id="whispers-api-url" placeholder="http://localhost:5001">
+                        </div>
+                        <div class="whispers-field-group" style="margin-bottom:6px;">
+                            <label><i class="fa-solid fa-key"></i> API Key</label>
+                            <input type="password" id="whispers-api-key" placeholder="sk-... (optional)">
+                        </div>
+                        <div class="whispers-field-group">
+                            <label><i class="fa-solid fa-microchip"></i> Model</label>
+                            <div class="whispers-model-row">
+                                <select id="whispers-model-select">
+                                    <option value="">Default</option>
+                                </select>
+                                <button class="menu_button whispers-btn-small whispers-btn-icon" id="whispers-btn-refresh-models" title="Refresh models">
+                                    <i class="fa-solid fa-arrows-rotate"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="whispers-field-group">
+                        <label><i class="fa-solid fa-list-ol"></i> Message Limit (context)</label>
+                        <input type="number" id="whispers-msg-limit" min="1" max="100" value="20">
+                    </div>
                 </div>
 
             </div>
@@ -1036,10 +1080,14 @@ function autoResize() {
 function loadSettingsUI() {
     const s = getSettings();
     const el = (id) => document.getElementById(id);
+
+    // Enabled toggle
+    const enabledCheck = el('whispers-enabled');
+    if (enabledCheck) enabledCheck.checked = s.enabled !== false;
+
     if (el('whispers-api-url')) el('whispers-api-url').value = s.extraApiUrl || '';
     if (el('whispers-api-key')) el('whispers-api-key').value = s.extraApiKey || '';
     if (el('whispers-msg-limit')) el('whispers-msg-limit').value = s.messageLimit || 20;
-
 
     const extraCheck = el('whispers-use-extra-api');
     if (extraCheck) {
@@ -1060,7 +1108,26 @@ function loadSettingsUI() {
         }
     }
 
+    // Setup tab switching
+    setupTabs();
+
     renderItemList();
+}
+
+function setupTabs() {
+    const tabs = document.querySelectorAll('.whispers-tab');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const target = tab.dataset.tab;
+            // Update active tab
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            // Show/hide content
+            document.querySelectorAll('.whispers-tab-content').forEach(c => c.style.display = 'none');
+            const content = document.getElementById(`whispers-tab-${target}`);
+            if (content) content.style.display = '';
+        });
+    });
 }
 
 function toggleApiSection(show) {
@@ -1102,9 +1169,14 @@ function bindEvents() {
         const f = { id: generateId(), name: 'New Folder', icon: 'fa-folder', color: '#667eea', note: '' };
         settings.folders.push(f);
         saveSettings();
-        editingFolderId = f.id;
         renderItemList();
-        toggleFolderEdit(f.id);
+        showFolderEditPopup(f);
+    });
+
+    // Enable toggle
+    el('whispers-enabled')?.addEventListener('change', (e) => {
+        getSettings().enabled = e.target.checked;
+        saveSettings();
     });
 
     // Import
