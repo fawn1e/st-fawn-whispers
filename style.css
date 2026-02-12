@@ -1635,3 +1635,552 @@
 .whispers-reply-delete:hover {
     color: #e74c3c;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   THEME CARD SELECTOR
+   ═══════════════════════════════════════════════════════════════ */
+
+.whispers-theme-cards {
+    display: flex;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.whispers-theme-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    border-radius: 10px;
+    padding: 6px;
+    border: 2px solid transparent;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.whispers-theme-card input[type="radio"] {
+    display: none;
+}
+
+.whispers-theme-card:hover {
+    border-color: var(--SmartThemeBorderColor);
+}
+
+.whispers-theme-card.active {
+    border-color: var(--SmartThemeQuoteColor);
+    box-shadow: 0 0 0 1px var(--SmartThemeQuoteColor);
+}
+
+.whispers-theme-label {
+    font-size: 0.78em;
+    font-weight: 600;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+
+.whispers-theme-card.active .whispers-theme-label {
+    opacity: 1;
+    color: var(--SmartThemeQuoteColor);
+}
+
+/* Mini preview box */
+.whispers-theme-preview {
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(128, 128, 128, 0.15);
+}
+
+.wtp-header {
+    height: 14%;
+    flex-shrink: 0;
+}
+
+.wtp-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 5px;
+    justify-content: center;
+}
+
+.wtp-bubble {
+    height: 8px;
+    border-radius: 4px;
+}
+
+.wtp-bubble-left {
+    width: 65%;
+    align-self: flex-start;
+}
+
+.wtp-bubble-right {
+    width: 55%;
+    align-self: flex-end;
+}
+
+.wtp-short {
+    width: 40%;
+}
+
+.wtp-footer {
+    height: 12%;
+    flex-shrink: 0;
+}
+
+/* Light preview colors */
+.whispers-theme-preview-light {
+    background: #f5f5f7;
+}
+
+.whispers-theme-preview-light .wtp-header {
+    background: linear-gradient(135deg, #e8eaef, #dde0e8);
+}
+
+.whispers-theme-preview-light .wtp-bubble-left {
+    background: #e0e2e8;
+}
+
+.whispers-theme-preview-light .wtp-bubble-right {
+    background: linear-gradient(135deg, #6366a0, #7c7fc4);
+}
+
+.whispers-theme-preview-light .wtp-footer {
+    background: #e8eaef;
+}
+
+/* Dark preview colors */
+.whispers-theme-preview-dark {
+    background: #1a1b23;
+}
+
+.whispers-theme-preview-dark .wtp-header {
+    background: linear-gradient(135deg, #22232e, #282a38);
+}
+
+.whispers-theme-preview-dark .wtp-bubble-left {
+    background: #2c2e3a;
+}
+
+.whispers-theme-preview-dark .wtp-bubble-right {
+    background: linear-gradient(135deg, #4a4d8a, #5b5eb0);
+}
+
+.whispers-theme-preview-dark .wtp-footer {
+    background: #22232e;
+}
+
+/* Custom/Auto preview — gradient blend */
+.whispers-theme-preview-custom {
+    background: var(--SmartThemeChatTintColor, var(--SmartThemeBlurTintColor));
+}
+
+.whispers-theme-preview-custom .wtp-header {
+    background: var(--SmartThemeBlurTintColor);
+}
+
+.whispers-theme-preview-custom .wtp-bubble-left {
+    background: var(--SmartThemeBorderColor);
+}
+
+.whispers-theme-preview-custom .wtp-bubble-right {
+    background: var(--SmartThemeQuoteColor);
+}
+
+.whispers-theme-preview-custom .wtp-footer {
+    background: var(--SmartThemeBlurTintColor);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   LIGHT THEME
+   Clean, warm ivory inspired by premium messaging apps.
+   No neons. Soft indigo user bubbles, warm grays, silk gradients.
+   ═══════════════════════════════════════════════════════════════ */
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-chat-window {
+    background: #f5f5f7;
+    border-color: rgba(0, 0, 0, 0.08);
+    box-shadow:
+        0 12px 48px rgba(0, 0, 0, 0.12),
+        0 0 0 1px rgba(255, 255, 255, 0.4) inset;
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-chat-header {
+    background: linear-gradient(180deg, #eaecf2, #e2e4ec);
+    border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-chat-header-name {
+    color: #2c2d35;
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-chat-header-status {
+    color: #6b7280;
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-chat-header-avatar-placeholder {
+    background: #d8dae3;
+    border-color: rgba(0, 0, 0, 0.08);
+    color: #6b7280;
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-chat-close,
+.whispers-overlay[data-whispers-theme="light"] .whispers-chat-clear {
+    color: #5a5d6b;
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-chat-close:hover,
+.whispers-overlay[data-whispers-theme="light"] .whispers-chat-clear:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: #2c2d35;
+}
+
+/* Messages area */
+.whispers-overlay[data-whispers-theme="light"] .whispers-messages {
+    background: #f5f5f7;
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-messages::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-empty-state {
+    color: #9ca3af;
+}
+
+/* Bubbles */
+.whispers-overlay[data-whispers-theme="light"] .whispers-msg-user {
+    background: linear-gradient(135deg, #6366a0, #7c7fc4);
+    color: #ffffff;
+    border: none;
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-msg-assistant {
+    background: #e5e7ee;
+    color: #2c2d35;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-msg-time {
+    opacity: 0.5;
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-msg-user .whispers-msg-time {
+    color: rgba(255, 255, 255, 0.65);
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-msg-assistant .whispers-msg-time {
+    color: #9ca3af;
+}
+
+/* Typing */
+.whispers-overlay[data-whispers-theme="light"] .whispers-typing {
+    background: #e5e7ee;
+    border-color: rgba(0, 0, 0, 0.05);
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-typing-dot {
+    background: #9ca3af;
+}
+
+/* Input bar */
+.whispers-overlay[data-whispers-theme="light"] .whispers-input-bar {
+    background: linear-gradient(180deg, #edeef3, #e2e4ec);
+    border-top-color: rgba(0, 0, 0, 0.06);
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-input-field {
+    background: #ffffff;
+    color: #2c2d35;
+    border-color: rgba(0, 0, 0, 0.1);
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-input-field:focus {
+    border-color: #7c7fc4;
+    box-shadow: 0 0 0 2px rgba(124, 127, 196, 0.15);
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-input-field::placeholder {
+    color: #9ca3af;
+    opacity: 1;
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-send-btn {
+    background: linear-gradient(135deg, #6366a0, #7c7fc4);
+    color: #ffffff;
+}
+
+/* Action buttons */
+.whispers-overlay[data-whispers-theme="light"] .whispers-msg-action-btn {
+    color: #6b7280;
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-msg-retry:hover {
+    color: #6366a0;
+}
+
+/* Overlay tabs */
+.whispers-overlay[data-whispers-theme="light"] .whispers-overlay-tabs {
+    background: linear-gradient(180deg, #e8eaef, #e2e4ec);
+    border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-overlay-tab {
+    color: #5a5d6b;
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-overlay-tab.active {
+    color: #6366a0;
+    border-bottom-color: #6366a0;
+}
+
+/* Twitter feed — light */
+.whispers-overlay[data-whispers-theme="light"] .whispers-tweet {
+    border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-tweet:hover {
+    background: rgba(0, 0, 0, 0.02);
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-tweet-name {
+    color: #2c2d35;
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-tweet-username,
+.whispers-overlay[data-whispers-theme="light"] .whispers-tweet-time {
+    color: #9ca3af;
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-tweet-text {
+    color: #374151;
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-tweet-avatar-placeholder {
+    background: #e5e7ee;
+    border-color: rgba(0, 0, 0, 0.06);
+    color: #9ca3af;
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-twitter-bar {
+    background: linear-gradient(180deg, #edeef3, #e2e4ec);
+    border-top-color: rgba(0, 0, 0, 0.06);
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-tweet-reply {
+    border-left-color: rgba(0, 0, 0, 0.08);
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-tweet-reply-input {
+    border-top-color: rgba(0, 0, 0, 0.06);
+}
+
+.whispers-overlay[data-whispers-theme="light"] .whispers-tweet-reply-as {
+    color: #6366a0;
+    background: rgba(99, 102, 160, 0.08);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   DARK THEME
+   Rich, deep backgrounds with subtle warm highlights.
+   No neons. Muted indigo accents, silver text, glass-like depth.
+   ═══════════════════════════════════════════════════════════════ */
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-chat-window {
+    background: #1a1b23;
+    border-color: rgba(255, 255, 255, 0.06);
+    box-shadow:
+        0 12px 48px rgba(0, 0, 0, 0.5),
+        0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-chat-header {
+    background: linear-gradient(180deg, #22232e, #1e1f29);
+    border-bottom-color: rgba(255, 255, 255, 0.05);
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-chat-header-name {
+    color: #e5e7ee;
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-chat-header-status {
+    color: #7b8193;
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-chat-header-avatar-placeholder {
+    background: #2c2e3a;
+    border-color: rgba(255, 255, 255, 0.08);
+    color: #7b8193;
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-chat-close,
+.whispers-overlay[data-whispers-theme="dark"] .whispers-chat-clear {
+    color: #9ca3b5;
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-chat-close:hover,
+.whispers-overlay[data-whispers-theme="dark"] .whispers-chat-clear:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #e5e7ee;
+}
+
+/* Messages area */
+.whispers-overlay[data-whispers-theme="dark"] .whispers-messages {
+    background: #1a1b23;
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-messages::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-empty-state {
+    color: #5c6170;
+}
+
+/* Bubbles */
+.whispers-overlay[data-whispers-theme="dark"] .whispers-msg-user {
+    background: linear-gradient(135deg, #4a4d8a, #5b5eb0);
+    color: #f0f0f5;
+    border: none;
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-msg-assistant {
+    background: #262837;
+    color: #d1d5e0;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-msg-time {
+    opacity: 0.5;
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-msg-user .whispers-msg-time {
+    color: rgba(240, 240, 245, 0.55);
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-msg-assistant .whispers-msg-time {
+    color: #5c6170;
+}
+
+/* Typing */
+.whispers-overlay[data-whispers-theme="dark"] .whispers-typing {
+    background: #262837;
+    border-color: rgba(255, 255, 255, 0.05);
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-typing-dot {
+    background: #5c6170;
+}
+
+/* Input bar */
+.whispers-overlay[data-whispers-theme="dark"] .whispers-input-bar {
+    background: linear-gradient(180deg, #1e1f29, #1a1b23);
+    border-top-color: rgba(255, 255, 255, 0.05);
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-input-field {
+    background: #262837;
+    color: #d1d5e0;
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-input-field:focus {
+    border-color: #5b5eb0;
+    box-shadow: 0 0 0 2px rgba(91, 94, 176, 0.15);
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-input-field::placeholder {
+    color: #5c6170;
+    opacity: 1;
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-send-btn {
+    background: linear-gradient(135deg, #4a4d8a, #5b5eb0);
+    color: #f0f0f5;
+}
+
+/* Action buttons */
+.whispers-overlay[data-whispers-theme="dark"] .whispers-msg-action-btn {
+    color: #7b8193;
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-msg-retry:hover {
+    color: #8b8ec8;
+}
+
+/* Overlay tabs */
+.whispers-overlay[data-whispers-theme="dark"] .whispers-overlay-tabs {
+    background: linear-gradient(180deg, #22232e, #1e1f29);
+    border-bottom-color: rgba(255, 255, 255, 0.05);
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-overlay-tab {
+    color: #7b8193;
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-overlay-tab.active {
+    color: #8b8ec8;
+    border-bottom-color: #8b8ec8;
+}
+
+/* Twitter feed — dark */
+.whispers-overlay[data-whispers-theme="dark"] .whispers-tweet {
+    border-bottom-color: rgba(255, 255, 255, 0.05);
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-tweet:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-tweet-name {
+    color: #e5e7ee;
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-tweet-username,
+.whispers-overlay[data-whispers-theme="dark"] .whispers-tweet-time {
+    color: #5c6170;
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-tweet-text {
+    color: #c0c4d0;
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-tweet-avatar-placeholder {
+    background: #2c2e3a;
+    border-color: rgba(255, 255, 255, 0.06);
+    color: #5c6170;
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-twitter-bar {
+    background: linear-gradient(180deg, #1e1f29, #1a1b23);
+    border-top-color: rgba(255, 255, 255, 0.05);
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-tweet-reply {
+    border-left-color: rgba(255, 255, 255, 0.06);
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-tweet-reply-input {
+    border-top-color: rgba(255, 255, 255, 0.05);
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-tweet-reply-as {
+    color: #8b8ec8;
+    background: rgba(139, 142, 200, 0.1);
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-tweet-reply-field {
+    background: #262837;
+    color: #d1d5e0;
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.whispers-overlay[data-whispers-theme="dark"] .whispers-tweet-reply-send {
+    color: #8b8ec8;
+}
