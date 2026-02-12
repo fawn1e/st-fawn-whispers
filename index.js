@@ -25,6 +25,7 @@ const defaultSettings = Object.freeze({
     chatAutoInterval: 3,
     twitterAutoInterval: 5,
     chatProactive: 'none',     // 'none' | 'comment' | 'advice' | 'checkin'
+    overlayTheme: 'custom',     // 'light' | 'dark' | 'custom'
     mainPromptTemplate: `You are a personal assistant in a chat application. Respond concisely and helpfully. Format your response as plain text.
 
 Your identity:
@@ -669,6 +670,51 @@ function buildSettingsHtml() {
 
                 <!-- ═══ Tab: Settings ═══ -->
                 <div class="whispers-tab-content" id="whispers-tab-settings" style="display:none;">
+                    <div class="whispers-field-group">
+                        <label><i class="fa-solid fa-palette"></i> Chat Theme</label>
+                        <div class="whispers-theme-cards">
+                            <label class="whispers-theme-card" data-theme-value="light">
+                                <input type="radio" name="whispers-overlay-theme" value="light">
+                                <div class="whispers-theme-preview whispers-theme-preview-light">
+                                    <div class="wtp-header"></div>
+                                    <div class="wtp-body">
+                                        <div class="wtp-bubble wtp-bubble-left"></div>
+                                        <div class="wtp-bubble wtp-bubble-right"></div>
+                                        <div class="wtp-bubble wtp-bubble-left wtp-short"></div>
+                                    </div>
+                                    <div class="wtp-footer"></div>
+                                </div>
+                                <span class="whispers-theme-label">Light</span>
+                            </label>
+                            <label class="whispers-theme-card" data-theme-value="dark">
+                                <input type="radio" name="whispers-overlay-theme" value="dark">
+                                <div class="whispers-theme-preview whispers-theme-preview-dark">
+                                    <div class="wtp-header"></div>
+                                    <div class="wtp-body">
+                                        <div class="wtp-bubble wtp-bubble-left"></div>
+                                        <div class="wtp-bubble wtp-bubble-right"></div>
+                                        <div class="wtp-bubble wtp-bubble-left wtp-short"></div>
+                                    </div>
+                                    <div class="wtp-footer"></div>
+                                </div>
+                                <span class="whispers-theme-label">Dark</span>
+                            </label>
+                            <label class="whispers-theme-card" data-theme-value="custom">
+                                <input type="radio" name="whispers-overlay-theme" value="custom" checked>
+                                <div class="whispers-theme-preview whispers-theme-preview-custom">
+                                    <div class="wtp-header"></div>
+                                    <div class="wtp-body">
+                                        <div class="wtp-bubble wtp-bubble-left"></div>
+                                        <div class="wtp-bubble wtp-bubble-right"></div>
+                                        <div class="wtp-bubble wtp-bubble-left wtp-short"></div>
+                                    </div>
+                                    <div class="wtp-footer"></div>
+                                </div>
+                                <span class="whispers-theme-label">Auto</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="whispers-divider"></div>
                     <div class="whispers-field-group">
                         <label><i class="fa-solid fa-toggle-on"></i> Active Modes</label>
                         <div class="whispers-mode-toggles">
@@ -2356,9 +2402,16 @@ function updateChatHeader() {
     }
 }
 
+function applyOverlayTheme() {
+    const o = document.getElementById('whispers-overlay');
+    if (!o) return;
+    const theme = getSettings().overlayTheme || 'custom';
+    o.setAttribute('data-whispers-theme', theme);
+}
+
 function openChat() {
     const o = document.getElementById('whispers-overlay');
-    if (o) { o.classList.add('open'); updateChatHeader(); renderChatMessages(); setTimeout(() => document.getElementById('whispers-input')?.focus(), 350); }
+    if (o) { applyOverlayTheme(); o.classList.add('open'); updateChatHeader(); renderChatMessages(); setTimeout(() => document.getElementById('whispers-input')?.focus(), 350); }
 }
 
 function closeChat() {
@@ -2466,6 +2519,14 @@ function loadSettingsUI() {
     // Proactive radio
     const proactiveRadio = document.querySelector(`input[name="whispers-chat-proactive"][value="${s.chatProactive || 'none'}"]`);
     if (proactiveRadio) proactiveRadio.checked = true;
+
+    // Theme radio
+    const themeRadio = document.querySelector(`input[name="whispers-overlay-theme"][value="${s.overlayTheme || 'custom'}"]`);
+    if (themeRadio) themeRadio.checked = true;
+    // Highlight active theme card
+    document.querySelectorAll('.whispers-theme-card').forEach(card => {
+        card.classList.toggle('active', card.dataset.themeValue === (s.overlayTheme || 'custom'));
+    });
 
     // Setup tab switching
     setupTabs();
@@ -2726,6 +2787,18 @@ function bindEvents() {
 
     // ── Twitter refresh ─────────────────────────────────────────
     el('whispers-tweet-refresh')?.addEventListener('click', generateTwitterPosts);
+
+    // ── Settings tab: Theme selector ──────────────────────────────
+    document.querySelectorAll('input[name="whispers-overlay-theme"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            getSettings().overlayTheme = e.target.value;
+            saveSettings();
+            applyOverlayTheme();
+            document.querySelectorAll('.whispers-theme-card').forEach(card => {
+                card.classList.toggle('active', card.dataset.themeValue === e.target.value);
+            });
+        });
+    });
 
     // ── Settings tab: Mode toggles ──────────────────────────────
     el('whispers-mode-chat')?.addEventListener('change', (e) => {
