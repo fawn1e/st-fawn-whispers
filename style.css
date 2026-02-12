@@ -1422,3 +1422,135 @@
     gap: 6px;
     font-size: 0.9em;
 }
+
+/* ── Tweet Reply System ────────────────────────────────────── */
+
+.whispers-tweet-wrap {
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+}
+
+.whispers-tweet-wrap:last-child {
+    border-bottom: none;
+}
+
+.whispers-tweet-wrap .whispers-tweet {
+    border-bottom: none;
+}
+
+.whispers-tweet-actions {
+    margin-top: 4px;
+    display: flex;
+    gap: 12px;
+}
+
+.whispers-tweet-reply-btn {
+    background: transparent;
+    border: none;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.35;
+    cursor: pointer;
+    font-size: 0.82em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: opacity 0.15s, color 0.15s;
+}
+
+.whispers-tweet-reply-btn:hover {
+    opacity: 0.8;
+    color: var(--SmartThemeQuoteColor);
+}
+
+/* Reply thread — indented */
+.whispers-tweet-reply {
+    margin-left: 32px;
+    padding: 8px 16px 8px 12px;
+    border-left: 2px solid var(--SmartThemeBorderColor);
+    border-bottom: none;
+    animation: whispers-bubble-in 0.25s ease-out;
+}
+
+.whispers-tweet-reply .whispers-tweet-avatar {
+    width: 30px;
+    height: 30px;
+    font-size: 12px;
+}
+
+/* Reply input */
+.whispers-tweet-reply-input {
+    margin-left: 32px;
+    padding: 8px 16px 10px 12px;
+    border-left: 2px solid var(--SmartThemeQuoteColor);
+    animation: whispers-bubble-in 0.2s ease-out;
+}
+
+.whispers-tweet-reply-input-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+.whispers-tweet-reply-as {
+    font-size: 0.78em;
+    opacity: 0.6;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding-bottom: 5px;
+    color: var(--SmartThemeQuoteColor);
+}
+
+.whispers-tweet-reply-field {
+    flex: 1;
+    resize: none;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 12px;
+    background: var(--SmartThemeBlurTintColor);
+    color: var(--SmartThemeBodyColor);
+    padding: 6px 10px;
+    font-size: 0.85em;
+    font-family: inherit;
+    line-height: 1.4;
+    max-height: 80px;
+    overflow-y: auto;
+}
+
+.whispers-tweet-reply-field:focus {
+    outline: none;
+    border-color: var(--SmartThemeQuoteColor);
+}
+
+.whispers-tweet-reply-send {
+    background: transparent;
+    border: none;
+    color: var(--SmartThemeQuoteColor);
+    cursor: pointer;
+    font-size: 0.9em;
+    padding: 6px;
+    border-radius: 50%;
+    transition: opacity 0.15s;
+    opacity: 0.7;
+}
+
+.whispers-tweet-reply-send:hover {
+    opacity: 1;
+}
+
+.whispers-tweet-reply-send:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+/* Loading indicator */
+.whispers-tweet-reply-loading {
+    margin-left: 32px;
+    padding: 6px 16px 6px 14px;
+    border-left: 2px solid var(--SmartThemeBorderColor);
+    font-size: 0.8em;
+    opacity: 0.5;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--SmartThemeBodyColor);
+    animation: whispers-bubble-in 0.2s ease-out;
+}
