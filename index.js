@@ -525,7 +525,7 @@ function renderItemList() {
                 <span class="whispers-folder-name">${escapeHtml(folder.name || 'Folder')}</span>
                 <span class="whispers-folder-count">${folderAssistants.length}</span>
                 <span class="whispers-folder-actions">
-                    ${folder.note ? '<button class="folder-info-btn" title="Author\'s Note"><i class="fa-solid fa-circle-info"></i></button>' : ''}
+                    <button class="folder-info-btn" title="Author's Note"><i class="fa-solid fa-circle-info"></i></button>
                     <button class="edit-folder-btn" title="Edit"><i class="fa-solid fa-pen"></i></button>
                     <button class="export-folder-btn" title="Export"><i class="fa-solid fa-file-export"></i></button>
                     <button class="delete-btn" title="Delete"><i class="fa-solid fa-trash"></i></button>
@@ -542,19 +542,16 @@ function renderItemList() {
             folderEl.classList.toggle('open');
         });
 
-        // Author's note popup
-        const infoBtn = folderEl.querySelector('.folder-info-btn');
-        if (infoBtn) {
-            infoBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                showNotePopup(folder);
-            });
-        }
+        // Author's note popup (always visible)
+        folderEl.querySelector('.folder-info-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            showNotePopup(folder);
+        });
 
         // Edit folder
         folderEl.querySelector('.edit-folder-btn').addEventListener('click', (e) => {
             e.stopPropagation();
-            toggleFolderEdit(folder.id);
+            showFolderEditPopup(folder);
         });
 
         // Export folder
@@ -638,7 +635,7 @@ function createAssistantItem(asst) {
 
     // Item row
     const item = document.createElement('div');
-    item.className = 'whispers-assistant-item' + (asst.id === editingAssistantId ? ' active' : '');
+    item.className = 'whispers-assistant-item';
     item.dataset.id = asst.id;
     item.draggable = true;
 
@@ -672,11 +669,10 @@ function createAssistantItem(asst) {
         item.classList.remove('dragging');
     });
 
-    // Click to toggle inline edit
+    // Click to open edit popup
     item.addEventListener('click', (e) => {
         if (e.target.closest('.whispers-assistant-actions')) return;
-        editingAssistantId = editingAssistantId === asst.id ? null : asst.id;
-        renderItemList();
+        showAssistantEditPopup(asst);
     });
 
     // Export
@@ -698,67 +694,80 @@ function createAssistantItem(asst) {
     });
 
     container.appendChild(item);
-
-    // Inline edit panel (if selected)
-    if (editingAssistantId === asst.id) {
-        container.appendChild(createInlineEditPanel(asst));
-    }
-
     return container;
 }
 
-function createInlineEditPanel(asst) {
+// ── Assistant Edit Popup ────────────────────────────────────────
+
+function showAssistantEditPopup(asst) {
+    closeAllPopups();
     const charName = getCurrentCharName();
 
-    const panel = document.createElement('div');
-    panel.className = 'whispers-inline-edit';
-    panel.innerHTML = `
-        <div class="whispers-avatar-upload">
-            <div class="whispers-avatar-preview-placeholder" id="whispers-inline-avatar-${asst.id}" title="Click to set avatar" style="cursor:pointer;">
-                ${asst.avatar ? `<img class="whispers-avatar-preview" src="${asst.avatar}" alt="">` : '<i class="fa-solid fa-image"></i>'}
+    const overlay = document.createElement('div');
+    overlay.className = 'whispers-edit-popup-overlay';
+    overlay.innerHTML = `
+        <div class="whispers-edit-popup">
+            <div class="whispers-edit-popup-header">
+                <i class="fa-solid fa-ghost"></i>
+                <strong>Edit Assistant</strong>
+                <span style="flex:1"></span>
+                <button class="whispers-edit-popup-close"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <span style="font-size:0.8em;opacity:0.6;">Click to set avatar</span>
-        </div>
-        <div class="whispers-field-group">
-            <label><i class="fa-solid fa-signature"></i> Name</label>
-            <input type="text" class="w-edit-name" value="${escapeHtml(asst.name || '')}" placeholder="Name">
-        </div>
-        <div class="whispers-field-group">
-            <label><i class="fa-solid fa-masks-theater"></i> Character</label>
-            <textarea class="w-edit-character" placeholder="Personality...">${escapeHtml(asst.character || '')}</textarea>
-        </div>
-        <div class="whispers-field-group">
-            <label><i class="fa-solid fa-ban"></i> Bans</label>
-            <textarea class="w-edit-bans" placeholder="Never say...">${escapeHtml(asst.bans || '')}</textarea>
-        </div>
-        <div class="whispers-field-group">
-            <label><i class="fa-solid fa-link"></i> Binding</label>
-            <select class="w-edit-binding">
-                <option value="none" ${asst.binding === 'none' || !asst.binding ? 'selected' : ''}>None</option>
-                <option value="global" ${asst.binding === 'global' ? 'selected' : ''}>Global (all chats)</option>
-                <option value="character" ${asst.binding === 'character' ? 'selected' : ''}>Character${charName ? ` (${charName})` : ''}</option>
-                <option value="chat" ${asst.binding === 'chat' ? 'selected' : ''}>This Chat</option>
-            </select>
-        </div>
-        <div class="whispers-row">
-            <button class="menu_button w-save-btn"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+            <div class="whispers-edit-popup-body">
+                <div class="whispers-avatar-upload">
+                    <div class="whispers-avatar-preview-placeholder" id="whispers-popup-avatar" title="Click to set avatar" style="cursor:pointer;">
+                        ${asst.avatar ? `<img class="whispers-avatar-preview" src="${asst.avatar}" alt="">` : '<i class="fa-solid fa-image"></i>'}
+                    </div>
+                    <span style="font-size:0.8em;opacity:0.6;">Click to set avatar</span>
+                </div>
+                <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-signature"></i> Name</label>
+                    <input type="text" class="w-edit-name" value="${escapeHtml(asst.name || '')}" placeholder="Name">
+                </div>
+                <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-masks-theater"></i> Character</label>
+                    <textarea class="w-edit-character" rows="3" placeholder="Personality...">${escapeHtml(asst.character || '')}</textarea>
+                </div>
+                <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-ban"></i> Bans</label>
+                    <textarea class="w-edit-bans" rows="2" placeholder="Never say...">${escapeHtml(asst.bans || '')}</textarea>
+                </div>
+                <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-link"></i> Binding</label>
+                    <select class="w-edit-binding">
+                        <option value="none" ${asst.binding === 'none' || !asst.binding ? 'selected' : ''}>None</option>
+                        <option value="global" ${asst.binding === 'global' ? 'selected' : ''}>Global (all chats)</option>
+                        <option value="character" ${asst.binding === 'character' ? 'selected' : ''}>Character${charName ? ` (${charName})` : ''}</option>
+                        <option value="chat" ${asst.binding === 'chat' ? 'selected' : ''}>This Chat</option>
+                    </select>
+                </div>
+                <div class="whispers-row">
+                    <button class="menu_button w-save-btn"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+                </div>
+            </div>
         </div>
     `;
 
+    // Close
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    overlay.querySelector('.whispers-edit-popup-close').addEventListener('click', () => overlay.remove());
+
+    const body = overlay.querySelector('.whispers-edit-popup-body');
+
     // Avatar click
-    panel.querySelector(`#whispers-inline-avatar-${asst.id}`).addEventListener('click', () => {
+    body.querySelector('#whispers-popup-avatar').addEventListener('click', () => {
         const fileInput = document.getElementById('whispers-avatar-file');
         fileInput.dataset.targetAssistant = asst.id;
         fileInput.click();
     });
 
     // Save
-    panel.querySelector('.w-save-btn').addEventListener('click', () => {
-        asst.name = panel.querySelector('.w-edit-name').value || 'Unnamed';
-        asst.character = panel.querySelector('.w-edit-character').value || '';
-        asst.bans = panel.querySelector('.w-edit-bans').value || '';
+    body.querySelector('.w-save-btn').addEventListener('click', () => {
+        asst.name = body.querySelector('.w-edit-name').value || 'Unnamed';
+        asst.character = body.querySelector('.w-edit-character').value || '';
+        asst.bans = body.querySelector('.w-edit-bans').value || '';
 
-        const newBinding = panel.querySelector('.w-edit-binding').value;
+        const newBinding = body.querySelector('.w-edit-binding').value;
         asst.binding = newBinding;
         if (newBinding === 'character') {
             asst.bindingTarget = getCurrentCharName();
@@ -773,56 +782,58 @@ function createInlineEditPanel(asst) {
         saveSettings();
         renderItemList();
         updateChatHeader();
+        overlay.remove();
         toastr.success('Assistant saved');
     });
 
-    return panel;
+    document.body.appendChild(overlay);
 }
 
-// ── Folder Edit ─────────────────────────────────────────────────
+// ── Folder Edit Popup ───────────────────────────────────────────
 
-function toggleFolderEdit(folderId) {
-    if (editingFolderId === folderId) {
-        editingFolderId = null;
-        renderItemList();
-        return;
-    }
-    editingFolderId = folderId;
-    renderItemList();
+function showFolderEditPopup(folder) {
+    closeAllPopups();
 
-    const settings = getSettings();
-    const folder = settings.folders.find(f => f.id === folderId);
-    if (!folder) return;
-
-    const folderEl = document.querySelector(`.whispers-folder[data-id="${folderId}"]`);
-    if (!folderEl) return;
-
-    const form = document.createElement('div');
-    form.className = 'whispers-folder-edit';
-    form.innerHTML = `
-        <div class="whispers-field-group">
-            <label><i class="fa-solid fa-pen"></i> Name</label>
-            <input type="text" class="wf-name" value="${escapeHtml(folder.name || '')}">
-        </div>
-        <div class="whispers-field-group">
-            <label><i class="fa-solid fa-icons"></i> Icon</label>
-            <div class="whispers-icon-picker" id="wf-icon-picker-${folderId}"></div>
-        </div>
-        <div class="whispers-color-row">
-            <label><i class="fa-solid fa-palette"></i> Color</label>
-            <input type="color" class="wf-color" value="${folder.color || '#667eea'}">
-        </div>
-        <div class="whispers-field-group">
-            <label><i class="fa-solid fa-note-sticky"></i> Author's Note <span style="font-size:0.75em;opacity:0.5;">(HTML supported)</span></label>
-            <textarea class="wf-note" rows="3" placeholder="Describe what's in this folder...">${escapeHtml(folder.note || '')}</textarea>
-        </div>
-        <div class="whispers-row">
-            <button class="menu_button wf-save"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+    const overlay = document.createElement('div');
+    overlay.className = 'whispers-edit-popup-overlay';
+    overlay.innerHTML = `
+        <div class="whispers-edit-popup">
+            <div class="whispers-edit-popup-header">
+                <span style="color:${folder.color || 'inherit'}"><i class="fa-solid ${folder.icon || 'fa-folder'}"></i></span>
+                <strong>Edit Folder</strong>
+                <span style="flex:1"></span>
+                <button class="whispers-edit-popup-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="whispers-edit-popup-body">
+                <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-pen"></i> Name</label>
+                    <input type="text" class="wf-name" value="${escapeHtml(folder.name || '')}">
+                </div>
+                <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-icons"></i> Icon</label>
+                    <div class="whispers-icon-picker" id="wf-icon-picker"></div>
+                </div>
+                <div class="whispers-color-row">
+                    <label><i class="fa-solid fa-palette"></i> Color</label>
+                    <input type="color" class="wf-color" value="${folder.color || '#667eea'}">
+                </div>
+                <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-note-sticky"></i> Author's Note <span style="font-size:0.75em;opacity:0.5;">(HTML supported)</span></label>
+                    <textarea class="wf-note" rows="3" placeholder="Describe what's in this folder...">${escapeHtml(folder.note || '')}</textarea>
+                </div>
+                <div class="whispers-row">
+                    <button class="menu_button wf-save"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+                </div>
+            </div>
         </div>
     `;
 
+    // Close
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    overlay.querySelector('.whispers-edit-popup-close').addEventListener('click', () => overlay.remove());
+
     // Build icon picker grid
-    const pickerGrid = form.querySelector(`#wf-icon-picker-${folderId}`);
+    const pickerGrid = overlay.querySelector('#wf-icon-picker');
     let selectedIcon = folder.icon || 'fa-folder';
     for (const iconName of FA_ICONS) {
         const iconBtn = document.createElement('button');
@@ -839,29 +850,28 @@ function toggleFolderEdit(folderId) {
     }
 
     // Save
-    form.querySelector('.wf-save').addEventListener('click', () => {
-        folder.name = form.querySelector('.wf-name').value || 'Folder';
+    const body = overlay.querySelector('.whispers-edit-popup-body');
+    body.querySelector('.wf-save').addEventListener('click', () => {
+        folder.name = body.querySelector('.wf-name').value || 'Folder';
         folder.icon = selectedIcon;
-        folder.color = form.querySelector('.wf-color').value || '#667eea';
-        folder.note = form.querySelector('.wf-note').value || '';
-        editingFolderId = null;
+        folder.color = body.querySelector('.wf-color').value || '#667eea';
+        folder.note = body.querySelector('.wf-note').value || '';
         saveSettings();
         renderItemList();
+        overlay.remove();
         toastr.success('Folder saved');
     });
 
-    folderEl.appendChild(form);
-    folderEl.classList.add('open');
+    document.body.appendChild(overlay);
 }
 
 // ── Author's Note Popup ─────────────────────────────────────────
 
 function showNotePopup(folder) {
-    // Remove any existing popup
-    document.querySelectorAll('.whispers-note-popup-overlay').forEach(el => el.remove());
+    closeAllPopups();
 
     const overlay = document.createElement('div');
-    overlay.className = 'whispers-note-popup-overlay';
+    overlay.className = 'whispers-edit-popup-overlay';
     overlay.innerHTML = `
         <div class="whispers-note-popup">
             <div class="whispers-note-popup-header">
@@ -872,7 +882,7 @@ function showNotePopup(folder) {
                 <span style="flex:1"></span>
                 <button class="whispers-note-popup-close"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <div class="whispers-note-popup-body">${folder.note || '<em>No notes</em>'}</div>
+            <div class="whispers-note-popup-body">${folder.note || '<em style="opacity:0.5;">No notes yet</em>'}</div>
         </div>
     `;
 
@@ -882,6 +892,12 @@ function showNotePopup(folder) {
     overlay.querySelector('.whispers-note-popup-close').addEventListener('click', () => overlay.remove());
 
     document.body.appendChild(overlay);
+}
+
+// ── Helper: close all popups ────────────────────────────────────
+
+function closeAllPopups() {
+    document.querySelectorAll('.whispers-edit-popup-overlay').forEach(el => el.remove());
 }
 
 // ── Chat UI ─────────────────────────────────────────────────────
