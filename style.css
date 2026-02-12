@@ -425,12 +425,6 @@
 .whispers-assistant-actions {
     display: flex;
     gap: 2px;
-    opacity: 0;
-    transition: opacity 0.15s;
-}
-
-.whispers-assistant-item:hover .whispers-assistant-actions {
-    opacity: 1;
 }
 
 .whispers-assistant-actions button {
