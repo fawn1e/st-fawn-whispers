@@ -614,19 +614,16 @@
     background: transparent;
     color: var(--SmartThemeBodyColor);
     cursor: pointer;
-    font-size: 17px;
+    font-size: 20px;
     opacity: 0.7;
-    transition: opacity 0.2s, transform 0.15s, color 0.2s;
+    transition: opacity 0.2s, color 0.2s;
     border-radius: 50%;
     flex-shrink: 0;
-    margin-left: 5px;
-    margin-right: 2px;
 }
 
 #whispers-chat-btn:hover {
     opacity: 1;
     color: var(--SmartThemeQuoteColor);
-    transform: scale(1.15);
 }
 
 /* ── Chat Overlay (iOS-style) ───────────────────────────────── */
