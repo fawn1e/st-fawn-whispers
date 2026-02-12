@@ -1554,3 +1554,84 @@
     color: var(--SmartThemeBodyColor);
     animation: whispers-bubble-in 0.2s ease-out;
 }
+
+/* ── Chat Message Action Buttons ───────────────────────────── */
+
+.whispers-msg {
+    position: relative;
+}
+
+.whispers-msg-actions {
+    display: inline-flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+.whispers-msg:hover .whispers-msg-actions {
+    opacity: 1;
+}
+
+.whispers-msg-action-btn {
+    background: transparent;
+    border: none;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.4;
+    cursor: pointer;
+    font-size: 0.72em;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: opacity 0.15s, color 0.15s;
+}
+
+.whispers-msg-action-btn:hover {
+    opacity: 0.9;
+}
+
+.whispers-msg-retry:hover {
+    color: var(--SmartThemeQuoteColor);
+}
+
+.whispers-msg-delete:hover {
+    color: #e74c3c;
+}
+
+/* ── Tweet Reply Action Buttons ────────────────────────────── */
+
+.whispers-reply-actions {
+    display: inline-flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    margin-left: 4px;
+}
+
+.whispers-tweet-reply:hover .whispers-reply-actions {
+    opacity: 1;
+}
+
+.whispers-reply-action-btn {
+    background: transparent;
+    border: none;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.4;
+    cursor: pointer;
+    font-size: 0.7em;
+    padding: 1px 3px;
+    border-radius: 3px;
+    transition: opacity 0.15s, color 0.15s;
+}
+
+.whispers-reply-action-btn:hover {
+    opacity: 0.9;
+}
+
+.whispers-reply-retry:hover {
+    color: var(--SmartThemeQuoteColor);
+}
+
+.whispers-reply-delete:hover {
+    color: #e74c3c;
+}
