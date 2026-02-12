@@ -364,6 +364,48 @@ let editingAssistantId = null;
 let editingFolderId = null;
 let isGenerating = false;
 
+// ── Update Check ────────────────────────────────────────────────
+
+async function checkForUpdate() {
+    try {
+        const { getRequestHeaders } = SillyTavern.getContext();
+        const resp = await fetch('/api/extensions/version', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ extensionName: `third-party/${MODULE_NAME}` }),
+        });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const btn = document.getElementById('whispers-btn-update');
+        if (btn && data.isUpToDate === false) {
+            btn.style.display = '';
+            btn.title = 'Update available — click to update and reload';
+        }
+    } catch (e) {
+        console.log('[Whispers] Update check failed:', e);
+    }
+}
+
+async function performUpdate() {
+    try {
+        const { getRequestHeaders } = SillyTavern.getContext();
+        toastr.info('Updating Whispers...');
+        const resp = await fetch('/api/extensions/update', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ extensionName: `third-party/${MODULE_NAME}` }),
+        });
+        if (resp.ok) {
+            toastr.success('Updated! Reloading...');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            toastr.error('Update failed');
+        }
+    } catch (e) {
+        toastr.error('Update failed: ' + e.message);
+    }
+}
+
 // ── UI: Settings Panel HTML ─────────────────────────────────────
 
 function buildSettingsHtml() {
@@ -1236,6 +1278,9 @@ function bindEvents() {
         saveSettings();
     });
 
+    // Update button
+    el('whispers-btn-update')?.addEventListener('click', performUpdate);
+
     // Import
     el('whispers-btn-import')?.addEventListener('click', () => el('whispers-import-file')?.click());
     el('whispers-import-file')?.addEventListener('change', async (e) => {
@@ -1360,6 +1405,7 @@ function bindEvents() {
 
     bindEvents();
     loadSettingsUI();
+    checkForUpdate();
 
     eventSource.on(event_types.CHAT_CHANGED, () => {
         updateChatHeader();
