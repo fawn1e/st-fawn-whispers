@@ -1463,15 +1463,21 @@ function bindEvents() {
     document.body.insertAdjacentHTML('beforeend', buildChatOverlayHtml());
 
     // Chat bar button
-    const formSheld = document.getElementById('form_sheld');
-    if (formSheld) {
-        const sendButSheld = document.getElementById('send_but_sheld');
-        if (sendButSheld) {
-            sendButSheld.insertAdjacentHTML('beforeend', buildChatBarButton());
-        } else {
-            const sendForm = formSheld.querySelector('#send_form');
-            if (sendForm) sendForm.insertAdjacentHTML('beforeend', buildChatBarButton());
-            else formSheld.insertAdjacentHTML('beforeend', buildChatBarButton());
+    // Chat bar button
+    const extensionsBtn = document.getElementById('extensions_button');
+    if (extensionsBtn) {
+        extensionsBtn.insertAdjacentHTML('afterend', buildChatBarButton());
+    } else {
+        const formSheld = document.getElementById('form_sheld');
+        if (formSheld) {
+            const sendButSheld = document.getElementById('send_but_sheld');
+            if (sendButSheld) {
+                sendButSheld.insertAdjacentHTML('beforeend', buildChatBarButton());
+            } else {
+                const sendForm = formSheld.querySelector('#send_form');
+                if (sendForm) sendForm.insertAdjacentHTML('beforeend', buildChatBarButton());
+                else formSheld.insertAdjacentHTML('beforeend', buildChatBarButton());
+            }
         }
     }
 
