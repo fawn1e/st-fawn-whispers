@@ -1465,9 +1465,14 @@ function bindEvents() {
     // Chat bar button
     const formSheld = document.getElementById('form_sheld');
     if (formSheld) {
-        const sendForm = formSheld.querySelector('#send_form');
-        if (sendForm) sendForm.insertAdjacentHTML('afterbegin', buildChatBarButton());
-        else formSheld.insertAdjacentHTML('afterbegin', buildChatBarButton());
+        const sendButSheld = document.getElementById('send_but_sheld');
+        if (sendButSheld) {
+            sendButSheld.insertAdjacentHTML('beforeend', buildChatBarButton());
+        } else {
+            const sendForm = formSheld.querySelector('#send_form');
+            if (sendForm) sendForm.insertAdjacentHTML('beforeend', buildChatBarButton());
+            else formSheld.insertAdjacentHTML('beforeend', buildChatBarButton());
+        }
     }
 
     bindEvents();
