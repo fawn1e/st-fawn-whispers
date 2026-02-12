@@ -476,6 +476,33 @@ function buildChatBarButton() {
 
 // ── UI: Render Item List (Folders + Assistants) ─────────────────
 
+// ── Popular FA icons for picker ─────────────────────────────────
+
+const FA_ICONS = [
+    'fa-folder','fa-folder-open','fa-star','fa-heart','fa-fire','fa-bolt',
+    'fa-crown','fa-gem','fa-shield','fa-wand-magic-sparkles','fa-hat-wizard',
+    'fa-dragon','fa-ghost','fa-skull','fa-cat','fa-dog','fa-paw','fa-feather',
+    'fa-dove','fa-fish','fa-spider','fa-bug','fa-leaf','fa-tree','fa-seedling',
+    'fa-sun','fa-moon','fa-cloud','fa-snowflake','fa-rainbow','fa-umbrella',
+    'fa-music','fa-guitar','fa-headphones','fa-gamepad','fa-puzzle-piece',
+    'fa-dice','fa-chess','fa-palette','fa-brush','fa-pen-fancy','fa-book',
+    'fa-book-open','fa-scroll','fa-graduation-cap','fa-flask','fa-atom',
+    'fa-rocket','fa-plane','fa-car','fa-bicycle','fa-ship','fa-anchor',
+    'fa-compass','fa-map','fa-mountain','fa-water','fa-campground',
+    'fa-house','fa-building','fa-store','fa-hospital','fa-church',
+    'fa-landmark','fa-trophy','fa-medal','fa-flag','fa-gift','fa-cake-candles',
+    'fa-champagne-glasses','fa-bell','fa-envelope','fa-comment','fa-comments',
+    'fa-circle-info','fa-lightbulb','fa-gear','fa-wrench','fa-hammer',
+    'fa-screwdriver-wrench','fa-key','fa-lock','fa-unlock','fa-eye',
+    'fa-hand','fa-thumbs-up','fa-face-smile','fa-face-laugh','fa-masks-theater',
+    'fa-robot','fa-microchip','fa-code','fa-terminal','fa-database',
+    'fa-server','fa-network-wired','fa-wifi','fa-globe','fa-earth-americas',
+    'fa-user','fa-users','fa-user-secret','fa-people-group',
+    'fa-suitcase','fa-briefcase','fa-box','fa-cubes','fa-tag','fa-tags',
+];
+
+// ── UI: Render Item List (Folders + Assistants) ─────────────────
+
 function renderItemList() {
     const settings = getSettings();
     const list = document.getElementById('whispers-item-list');
@@ -497,24 +524,32 @@ function renderItemList() {
                 </span>
                 <span class="whispers-folder-name">${escapeHtml(folder.name || 'Folder')}</span>
                 <span class="whispers-folder-count">${folderAssistants.length}</span>
-                <span class="whispers-assistant-actions">
+                <span class="whispers-folder-actions">
+                    ${folder.note ? '<button class="folder-info-btn" title="Author\'s Note"><i class="fa-solid fa-circle-info"></i></button>' : ''}
                     <button class="edit-folder-btn" title="Edit"><i class="fa-solid fa-pen"></i></button>
                     <button class="export-folder-btn" title="Export"><i class="fa-solid fa-file-export"></i></button>
                     <button class="delete-btn" title="Delete"><i class="fa-solid fa-trash"></i></button>
                 </span>
                 <i class="fa-solid fa-chevron-right whispers-folder-chevron"></i>
             </div>
-            <div class="whispers-folder-children">
-                ${folder.note ? `<div class="whispers-folder-note">${escapeHtml(folder.note)}</div>` : ''}
-            </div>
+            <div class="whispers-folder-children"></div>
         `;
 
         // Folder header click to expand/collapse
         const header = folderEl.querySelector('.whispers-folder-header');
         header.addEventListener('click', (e) => {
-            if (e.target.closest('.whispers-assistant-actions')) return;
+            if (e.target.closest('.whispers-folder-actions')) return;
             folderEl.classList.toggle('open');
         });
+
+        // Author's note popup
+        const infoBtn = folderEl.querySelector('.folder-info-btn');
+        if (infoBtn) {
+            infoBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                showNotePopup(folder);
+            });
+        }
 
         // Edit folder
         folderEl.querySelector('.edit-folder-btn').addEventListener('click', (e) => {
@@ -532,14 +567,36 @@ function renderItemList() {
         folderEl.querySelector('.delete-btn').addEventListener('click', (e) => {
             e.stopPropagation();
             settings.folders = settings.folders.filter(f => f.id !== folder.id);
-            // Unparent assistants
             settings.assistants.forEach(a => { if (a.folderId === folder.id) a.folderId = null; });
             saveSettings();
             renderItemList();
         });
 
-        // Add assistants inside folder
+        // Drag-and-drop: folder as drop target
         const childrenEl = folderEl.querySelector('.whispers-folder-children');
+        folderEl.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            folderEl.classList.add('drag-over');
+        });
+        folderEl.addEventListener('dragleave', (e) => {
+            if (!folderEl.contains(e.relatedTarget)) folderEl.classList.remove('drag-over');
+        });
+        folderEl.addEventListener('drop', (e) => {
+            e.preventDefault();
+            folderEl.classList.remove('drag-over');
+            const asstId = e.dataTransfer.getData('text/plain');
+            if (asstId) {
+                const asst = settings.assistants.find(a => a.id === asstId);
+                if (asst) {
+                    asst.folderId = folder.id;
+                    saveSettings();
+                    renderItemList();
+                    toastr.success(`Moved "${asst.name}" to "${folder.name}"`);
+                }
+            }
+        });
+
+        // Add assistants inside folder
         for (const asst of folderAssistants) {
             childrenEl.appendChild(createAssistantItem(asst));
         }
@@ -552,6 +609,23 @@ function renderItemList() {
     for (const asst of unfoldered) {
         list.appendChild(createAssistantItem(asst));
     }
+
+    // Drop-to-root zone
+    list.addEventListener('dragover', (e) => { e.preventDefault(); });
+    list.addEventListener('drop', (e) => {
+        if (e.target.closest('.whispers-folder')) return; // handled by folder
+        e.preventDefault();
+        const asstId = e.dataTransfer.getData('text/plain');
+        if (asstId) {
+            const asst = settings.assistants.find(a => a.id === asstId);
+            if (asst && asst.folderId) {
+                asst.folderId = null;
+                saveSettings();
+                renderItemList();
+                toastr.info(`Removed "${asst.name}" from folder`);
+            }
+        }
+    });
 
     if (settings.folders.length === 0 && settings.assistants.length === 0) {
         list.innerHTML = '<div style="opacity:0.4;font-size:0.85em;text-align:center;padding:10px;">No assistants yet</div>';
@@ -566,6 +640,7 @@ function createAssistantItem(asst) {
     const item = document.createElement('div');
     item.className = 'whispers-assistant-item' + (asst.id === editingAssistantId ? ' active' : '');
     item.dataset.id = asst.id;
+    item.draggable = true;
 
     const avatarHtml = asst.avatar
         ? `<img class="whispers-assistant-avatar" src="${asst.avatar}" alt="">`
@@ -587,14 +662,20 @@ function createAssistantItem(asst) {
         </span>
     `;
 
+    // Drag start
+    item.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', asst.id);
+        e.dataTransfer.effectAllowed = 'move';
+        item.classList.add('dragging');
+    });
+    item.addEventListener('dragend', () => {
+        item.classList.remove('dragging');
+    });
+
     // Click to toggle inline edit
     item.addEventListener('click', (e) => {
         if (e.target.closest('.whispers-assistant-actions')) return;
-        if (editingAssistantId === asst.id) {
-            editingAssistantId = null;
-        } else {
-            editingAssistantId = asst.id;
-        }
+        editingAssistantId = editingAssistantId === asst.id ? null : asst.id;
         renderItemList();
     });
 
@@ -618,7 +699,7 @@ function createAssistantItem(asst) {
 
     container.appendChild(item);
 
-    // Inline edit panel (if this assistant is being edited)
+    // Inline edit panel (if selected)
     if (editingAssistantId === asst.id) {
         container.appendChild(createInlineEditPanel(asst));
     }
@@ -627,7 +708,6 @@ function createAssistantItem(asst) {
 }
 
 function createInlineEditPanel(asst) {
-    const settings = getSettings();
     const charName = getCurrentCharName();
 
     const panel = document.createElement('div');
@@ -660,13 +740,6 @@ function createInlineEditPanel(asst) {
                 <option value="chat" ${asst.binding === 'chat' ? 'selected' : ''}>This Chat</option>
             </select>
         </div>
-        <div class="whispers-field-group">
-            <label><i class="fa-solid fa-folder"></i> Folder</label>
-            <select class="w-edit-folder">
-                <option value="">No folder</option>
-                ${settings.folders.map(f => `<option value="${f.id}" ${asst.folderId === f.id ? 'selected' : ''}>${escapeHtml(f.name)}</option>`).join('')}
-            </select>
-        </div>
         <div class="whispers-row">
             <button class="menu_button w-save-btn"><i class="fa-solid fa-floppy-disk"></i> Save</button>
         </div>
@@ -697,8 +770,6 @@ function createInlineEditPanel(asst) {
             asst.bindingTarget = null;
         }
 
-        asst.folderId = panel.querySelector('.w-edit-folder').value || null;
-
         saveSettings();
         renderItemList();
         updateChatHeader();
@@ -713,57 +784,104 @@ function createInlineEditPanel(asst) {
 function toggleFolderEdit(folderId) {
     if (editingFolderId === folderId) {
         editingFolderId = null;
-    } else {
-        editingFolderId = folderId;
+        renderItemList();
+        return;
     }
+    editingFolderId = folderId;
     renderItemList();
-    // If editing, inject the form
-    if (editingFolderId) {
-        const settings = getSettings();
-        const folder = settings.folders.find(f => f.id === editingFolderId);
-        if (!folder) return;
 
-        const folderEl = document.querySelector(`.whispers-folder[data-id="${folderId}"]`);
-        if (!folderEl) return;
+    const settings = getSettings();
+    const folder = settings.folders.find(f => f.id === folderId);
+    if (!folder) return;
 
-        const existing = folderEl.querySelector('.whispers-folder-edit');
-        if (existing) { existing.remove(); return; }
+    const folderEl = document.querySelector(`.whispers-folder[data-id="${folderId}"]`);
+    if (!folderEl) return;
 
-        const form = document.createElement('div');
-        form.className = 'whispers-folder-edit';
-        form.innerHTML = `
-            <div class="whispers-field-group">
-                <label><i class="fa-solid fa-pen"></i> Name</label>
-                <input type="text" class="wf-name" value="${escapeHtml(folder.name || '')}">
-            </div>
-            <div class="whispers-field-group">
-                <label><i class="fa-solid fa-icons"></i> Icon (FA class)</label>
-                <input type="text" class="wf-icon" value="${escapeHtml(folder.icon || 'fa-folder')}" placeholder="fa-folder">
-            </div>
-            <div class="whispers-color-row">
-                <label><i class="fa-solid fa-palette"></i> Color</label>
-                <input type="color" class="wf-color" value="${folder.color || '#667eea'}">
-            </div>
-            <div class="whispers-field-group">
-                <label><i class="fa-solid fa-note-sticky"></i> Author's Note</label>
-                <textarea class="wf-note" placeholder="Describe what's in this folder...">${escapeHtml(folder.note || '')}</textarea>
-            </div>
+    const form = document.createElement('div');
+    form.className = 'whispers-folder-edit';
+    form.innerHTML = `
+        <div class="whispers-field-group">
+            <label><i class="fa-solid fa-pen"></i> Name</label>
+            <input type="text" class="wf-name" value="${escapeHtml(folder.name || '')}">
+        </div>
+        <div class="whispers-field-group">
+            <label><i class="fa-solid fa-icons"></i> Icon</label>
+            <div class="whispers-icon-picker" id="wf-icon-picker-${folderId}"></div>
+        </div>
+        <div class="whispers-color-row">
+            <label><i class="fa-solid fa-palette"></i> Color</label>
+            <input type="color" class="wf-color" value="${folder.color || '#667eea'}">
+        </div>
+        <div class="whispers-field-group">
+            <label><i class="fa-solid fa-note-sticky"></i> Author's Note <span style="font-size:0.75em;opacity:0.5;">(HTML supported)</span></label>
+            <textarea class="wf-note" rows="3" placeholder="Describe what's in this folder...">${escapeHtml(folder.note || '')}</textarea>
+        </div>
+        <div class="whispers-row">
             <button class="menu_button wf-save"><i class="fa-solid fa-floppy-disk"></i> Save</button>
-        `;
+        </div>
+    `;
 
-        form.querySelector('.wf-save').addEventListener('click', () => {
-            folder.name = form.querySelector('.wf-name').value || 'Folder';
-            folder.icon = form.querySelector('.wf-icon').value || 'fa-folder';
-            folder.color = form.querySelector('.wf-color').value || '#667eea';
-            folder.note = form.querySelector('.wf-note').value || '';
-            editingFolderId = null;
-            saveSettings();
-            renderItemList();
-            toastr.success('Folder saved');
+    // Build icon picker grid
+    const pickerGrid = form.querySelector(`#wf-icon-picker-${folderId}`);
+    let selectedIcon = folder.icon || 'fa-folder';
+    for (const iconName of FA_ICONS) {
+        const iconBtn = document.createElement('button');
+        iconBtn.type = 'button';
+        iconBtn.className = 'whispers-icon-btn' + (iconName === selectedIcon ? ' selected' : '');
+        iconBtn.title = iconName;
+        iconBtn.innerHTML = `<i class="fa-solid ${iconName}"></i>`;
+        iconBtn.addEventListener('click', () => {
+            pickerGrid.querySelectorAll('.whispers-icon-btn').forEach(b => b.classList.remove('selected'));
+            iconBtn.classList.add('selected');
+            selectedIcon = iconName;
         });
-
-        folderEl.appendChild(form);
+        pickerGrid.appendChild(iconBtn);
     }
+
+    // Save
+    form.querySelector('.wf-save').addEventListener('click', () => {
+        folder.name = form.querySelector('.wf-name').value || 'Folder';
+        folder.icon = selectedIcon;
+        folder.color = form.querySelector('.wf-color').value || '#667eea';
+        folder.note = form.querySelector('.wf-note').value || '';
+        editingFolderId = null;
+        saveSettings();
+        renderItemList();
+        toastr.success('Folder saved');
+    });
+
+    folderEl.appendChild(form);
+    folderEl.classList.add('open');
+}
+
+// ── Author's Note Popup ─────────────────────────────────────────
+
+function showNotePopup(folder) {
+    // Remove any existing popup
+    document.querySelectorAll('.whispers-note-popup-overlay').forEach(el => el.remove());
+
+    const overlay = document.createElement('div');
+    overlay.className = 'whispers-note-popup-overlay';
+    overlay.innerHTML = `
+        <div class="whispers-note-popup">
+            <div class="whispers-note-popup-header">
+                <span style="color:${folder.color || 'inherit'}">
+                    <i class="fa-solid ${folder.icon || 'fa-folder'}"></i>
+                </span>
+                <strong>${escapeHtml(folder.name || 'Folder')}</strong>
+                <span style="flex:1"></span>
+                <button class="whispers-note-popup-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="whispers-note-popup-body">${folder.note || '<em>No notes</em>'}</div>
+        </div>
+    `;
+
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.remove();
+    });
+    overlay.querySelector('.whispers-note-popup-close').addEventListener('click', () => overlay.remove());
+
+    document.body.appendChild(overlay);
 }
 
 // ── Chat UI ─────────────────────────────────────────────────────
