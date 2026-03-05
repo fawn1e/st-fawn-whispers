@@ -50,6 +50,36 @@ RESPOND ONLY with a JSON array in this exact format, no other text:
 [{"name": "Display Name", "username": "handle", "content": "Post text here"}]`,
 });
 
+
+// ── Chirp Social Defaults (appended to settings at runtime) ─────
+const chirpDefaults = {
+    chirpUserProfile: { name: 'You', username: 'player', avatar: null, banner: null, bio: '' },
+    chirpPostCount: 4,
+    chirpFeedPrompt: `You are generating posts for Deerly, a cozy social network in a roleplay.
+
+NPC characters:
+{{npc_cards}}
+
+Recent story events:
+{{context}}
+
+Generate exactly {{post_count}} posts as a JSON array. Rules:
+- IMPORTANT: Mix post types. About half should be NPCs posting about their OWN life (daily activities, hobbies, random thoughts, food, mood — independent of story events). The other half may react to story events.
+- NPCs may @mention each other or @{{user_handle}} naturally in their posts
+- NPCs may reply to each other (set "replyTo": INDEX 0-based) or null
+- Max 260 chars per post. In-character, authentic voice. No forced hashtags.
+
+Respond ONLY with valid JSON: [{"npcId":"id","content":"text","replyTo":null}]`,
+    chirpDmPrompt: `You are {{npc_name}} (@{{npc_username}}) on Deerly, a social network in a roleplay.
+Personality: {{personality}}
+Post style: {{post_style}}
+
+{{user_name}} (@{{user_username}}) is DMing you.
+Story context: {{context}}
+
+Reply in character. 1-3 short sentences. Stay in persona.`,
+};
+
 // ── Helpers ─────────────────────────────────────────────────────
 
 function generateId() {
@@ -67,6 +97,13 @@ function getSettings() {
             s[key] = structuredClone(defaultSettings[key]);
         }
     }
+    // Merge Chirp social defaults
+    for (const key of Object.keys(chirpDefaults)) {
+        if (!Object.hasOwn(s, key)) {
+            s[key] = JSON.parse(JSON.stringify(chirpDefaults[key]));
+        }
+    }
+    if (!s.chirpUserProfile) s.chirpUserProfile = JSON.parse(JSON.stringify(chirpDefaults.chirpUserProfile));
     return s;
 }
 
@@ -579,6 +616,10 @@ function buildSettingsHtml() {
                         <input type="radio" name="whispers-tab" value="settings">
                         <i class="fa-solid fa-sliders"></i> Settings
                     </label>
+                    <label class="whispers-tab" data-tab="social">
+                        <input type="radio" name="whispers-tab" value="social">
+                        <i class="fa-solid fa-feather-pointed"></i> Social
+                    </label>
                 </div>
 
                 <!-- ═══ Tab: General ═══ -->
@@ -751,6 +792,43 @@ function buildSettingsHtml() {
                     </div>
                 </div>
 
+                <!-- ═══ Tab: Social / Chirp ═══ -->
+                <div class="whispers-tab-content" id="whispers-tab-social" style="display:none;">
+                    <div class="whispers-subsection">
+                        <div class="whispers-subsection-header"><i class="fa-solid fa-user-circle"></i> Your Chirp Profile</div>
+                        <div class="chirp-user-profile-row">
+                            <div class="chirp-settings-av" id="chirp-st-av" title="Click to upload avatar" style="cursor:pointer;">
+                                <i class="fa-solid fa-user"></i>
+                            </div>
+                            <div style="flex:1;display:flex;flex-direction:column;gap:5px;">
+                                <input type="text" id="chirp-st-name" placeholder="Display Name" style="padding:6px 8px;border:1px solid var(--SmartThemeBorderColor);border-radius:8px;background:var(--SmartThemeBlurTintColor);color:var(--SmartThemeBodyColor);font-size:0.87em;width:100%;box-sizing:border-box;">
+                                <input type="text" id="chirp-st-handle" placeholder="handle (no @)" style="padding:6px 8px;border:1px solid var(--SmartThemeBorderColor);border-radius:8px;background:var(--SmartThemeBlurTintColor);color:var(--SmartThemeBodyColor);font-size:0.87em;width:100%;box-sizing:border-box;">
+                                <textarea id="chirp-st-bio" placeholder="Bio" rows="2" style="padding:6px 8px;border:1px solid var(--SmartThemeBorderColor);border-radius:8px;background:var(--SmartThemeBlurTintColor);color:var(--SmartThemeBodyColor);font-size:0.87em;width:100%;box-sizing:border-box;resize:vertical;font-family:inherit;"></textarea>
+                            </div>
+                        </div>
+                        <input type="file" accept="image/*" id="chirp-st-av-file" style="display:none;">
+                    </div>
+                    <div class="whispers-divider"></div>
+                    <div class="whispers-subsection">
+                        <div class="whispers-subsection-header"><i class="fa-solid fa-feather-pointed"></i> Feed Settings</div>
+                        <div class="whispers-field-group">
+                            <label>Posts per batch</label>
+                            <input type="number" id="chirp-st-count" min="1" max="20" value="4" style="width:70px;padding:5px 8px;border:1px solid var(--SmartThemeBorderColor);border-radius:8px;background:var(--SmartThemeBlurTintColor);color:var(--SmartThemeBodyColor);">
+                        </div>
+                        <div class="whispers-field-group">
+                            <label>Feed Prompt</label>
+                            <textarea id="chirp-st-feed-prompt" rows="4" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--SmartThemeBorderColor);border-radius:8px;background:var(--SmartThemeBlurTintColor);color:var(--SmartThemeBodyColor);font-family:inherit;font-size:0.82em;resize:vertical;"></textarea>
+                        </div>
+                        <div class="whispers-field-group">
+                            <label>DM Prompt</label>
+                            <textarea id="chirp-st-dm-prompt" rows="3" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--SmartThemeBorderColor);border-radius:8px;background:var(--SmartThemeBlurTintColor);color:var(--SmartThemeBodyColor);font-family:inherit;font-size:0.82em;resize:vertical;"></textarea>
+                        </div>
+                        <div class="whispers-row">
+                            <button class="menu_button whispers-btn-small" id="chirp-st-reset-prompts" title="Reset prompts to default"><i class="fa-solid fa-rotate-left"></i> Reset Prompts</button>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
     </div>`;
@@ -779,7 +857,7 @@ function buildChatOverlayHtml() {
             <!-- Mode tabs (visible when both chat + twitter are active) -->
             <div class="whispers-overlay-tabs" id="whispers-overlay-tabs" style="display:none;">
                 <button class="whispers-overlay-tab active" data-panel="chat"><i class="fa-solid fa-comments"></i> Chat</button>
-                <button class="whispers-overlay-tab" data-panel="twitter"><i class="fa-brands fa-twitter"></i> Feed</button>
+                <button class="whispers-overlay-tab" data-panel="twitter"><span class="deerly-tab-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="currentColor" width="16" height="16" style="display:inline-block;vertical-align:middle;"><path d="M50,62 C44,62 38,58 36,52 C34,46 36,40 40,38 C38,34 32,28 28,20 C30,20 34,22 36,26 C36,22 34,16 32,10 C36,12 40,18 40,24 C42,20 44,14 46,10 C46,18 44,26 46,30 C47,28 48,24 50,22 C52,24 53,28 54,30 C56,26 54,18 54,10 C56,14 58,20 60,24 C60,18 64,12 68,10 C66,16 64,22 64,26 C66,22 70,20 72,20 C68,28 62,34 60,38 C64,40 66,46 64,52 C62,58 56,62 50,62 Z M50,64 C46,64 43,66 42,70 L42,88 C42,90 44,92 46,92 L48,92 L48,80 L52,80 L52,92 L54,92 C56,92 58,90 58,88 L58,70 C57,66 54,64 50,64 Z"/></svg></span> Deerly</button>
             </div>
 
             <!-- Chat panel -->
@@ -798,27 +876,77 @@ function buildChatOverlayHtml() {
                 </div>
             </div>
 
-            <!-- Twitter panel -->
+            <!-- Twitter / Chirp Social panel - full sub-app -->
             <div class="whispers-panel" id="whispers-panel-twitter" style="display:none;">
-                <div class="whispers-twitter-feed" id="whispers-twitter-feed">
-                    <div class="whispers-twitter-empty" id="whispers-twitter-empty">
-                        <i class="fa-brands fa-twitter"></i>
-                        <span>No posts yet. Click "Get Opinion" or wait for auto-generation.</span>
+                <div class="chirp-sub-panel active" id="chirp-sp-home">
+                    <div class="chirp-compose-bar">
+                        <div class="chirp-compose-av" id="chirp-compose-av-el" style="cursor:pointer;"><i class="fa-solid fa-user"></i></div>
+                        <div class="chirp-compose-right">
+                            <textarea class="chirp-compose-input" id="chirp-compose-input" placeholder="What's happening?" rows="1" maxlength="280"></textarea>
+                            <div class="chirp-compose-footer">
+                                <span class="chirp-char-count" id="chirp-char-count">280</span>
+                                <button class="chirp-post-btn" id="chirp-post-btn" disabled>Post</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chirp-feed-toolbar">
+                        <span class="chirp-feed-label"><span class="deerly-fox-logo"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 157" fill="currentColor" width="20" height="13"><path d="M253.823,41.499l-0.325,0.734c-2.41,5.503-8.319,9.204-14.332,9.204h-16.73v3.936c0,19.682-8.442,43.562-31.479,50.726l-3.909,41.513c2.862,1.12,4.892,3.898,4.892,7.156h-11.96l-4.781-51.275l-39-6.766c-10.755,13.121-27.175,23.474-44.585,26.549l-3.695,24.37c2.811,1.144,4.795,3.899,4.795,7.121H80.756l0.001-44.671c10.414-6.433,18.847-17.179,20.897-29.737c0,0-43.871,42.034-56.708,49.933c-5.012,3.084-10.609,4.676-16.121,4.676c-6.622,0-13.123-2.296-18.348-7.06c-9.654-8.802-11.272-23.402-3.78-34.105l0.722-1.035c5.007,5.223,11.765,7.918,18.623,7.918c4.441,0,8.925-1.131,13.003-3.438c12.878-7.285,33.765-21.585,41.987-26.531c5.561-3.345,13.409-6.095,19.728-7.581c15.761-3.706,67.877-8.57,67.877-8.57l53.797-52.336v16.513c0.079,0.006,0.411,0.059,1.616,0.298c4.89,0.973,9.251,3.723,12.227,7.723l5.686,7.642l10.742,4.341C253.79,39.186,254.295,40.431,253.823,41.499z M151.684,105.406l-13.191-2.288c-4.227,4.708-9.067,8.946-14.301,12.598l13.93,39.052h11.96c0-4.146-3.284-7.517-7.392-7.673l-5.613-27.44C142.607,115.672,147.418,110.796,151.684,105.406z M215.871,147.169l-6.906-44.331c-3.616,3.299-8.228,6.044-12.473,7.63l13.996,44.3h11.96C222.447,150.9,219.589,147.709,215.871,147.169z"/></svg></span></span>
+                        <button class="chirp-gen-btn" id="chirp-gen-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> Generate</button>
+                    </div>
+                    <div class="chirp-feed-scroll" id="chirp-feed-scroll">
+                        <div class="chirp-empty-state" id="chirp-feed-empty"><i class="fa-solid fa-feather-pointed"></i><div class="chirp-empty-title">Nothing here yet</div><div class="chirp-empty-sub">Hit Generate or write a post!</div></div>
                     </div>
                 </div>
-                <div class="whispers-twitter-bar">
-                    <button class="menu_button whispers-tweet-refresh" id="whispers-tweet-refresh">
-                        <i class="fa-solid fa-comment-dots"></i> Get Opinion
-                    </button>
+                <div class="chirp-sub-panel" id="chirp-sp-notifs">
+                    <div class="chirp-divider-label">Notifications</div>
+                    <div class="chirp-feed-scroll" id="chirp-notifs-scroll">
+                        <div class="chirp-empty-state"><i class="fa-regular fa-bell"></i><div class="chirp-empty-title">All caught up!</div></div>
+                    </div>
                 </div>
+                <div class="chirp-sub-panel" id="chirp-sp-dms">
+                    <div class="chirp-dm-layout">
+                        <div class="chirp-dm-sidebar">
+                            <div class="chirp-dm-sidebar-hdr">Messages</div>
+                            <div class="chirp-dm-list" id="chirp-dm-list-el"></div>
+                        </div>
+                        <div class="chirp-dm-chat" id="chirp-dm-chat-area">
+                            <div class="chirp-empty-state" style="padding:20px;"><i class="fa-regular fa-comment-dots" style="font-size:1.8em;opacity:0.3;"></i><div style="font-weight:700;">Select a conversation</div></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="chirp-sub-panel" id="chirp-sp-profile">
+                    <div class="chirp-profile-scroll" id="chirp-profile-content"></div>
+                </div>
+                <div id="chirp-modal-layer" style="display:none;position:absolute;inset:0;z-index:50;flex-direction:column;background:var(--SmartThemeChatTintColor,var(--SmartThemeBlurTintColor));">
+                    <div class="chirp-modal-topbar">
+                        <button class="chirp-modal-back" id="chirp-modal-back"><i class="fa-solid fa-arrow-left"></i></button>
+                        <span class="chirp-modal-title" id="chirp-modal-title">Profile</span>
+                    </div>
+                    <div class="chirp-modal-scroll" id="chirp-modal-scroll"></div>
+                </div>
+                <!-- Bookmarks sub-panel -->
+                <div class="chirp-sub-panel" id="chirp-sp-bookmarks">
+                    <div class="chirp-divider-label">Bookmarks</div>
+                    <div class="chirp-feed-scroll" id="chirp-bm-scroll">
+                        <div class="chirp-empty-state"><i class="fa-regular fa-bookmark"></i><div class="chirp-empty-title">No bookmarks yet</div></div>
+                    </div>
+                </div>
+                <nav class="chirp-bottom-nav">
+                    <button class="chirp-nav-btn active" data-sp="home"><div class="chirp-nav-badge" data-sp="home"></div><i class="fa-solid fa-house"></i><span>Home</span></button>
+                    <button class="chirp-nav-btn" data-sp="notifs"><div class="chirp-nav-badge" data-sp="notifs"></div><i class="fa-regular fa-bell"></i><span>Notifs</span></button>
+                    <button class="chirp-nav-btn" data-sp="dms"><div class="chirp-nav-badge" data-sp="dms"></div><i class="fa-regular fa-envelope"></i><span>DMs</span></button>
+                    <button class="chirp-nav-btn" data-sp="bookmarks"><div class="chirp-nav-badge" data-sp="bookmarks"></div><i class="fa-regular fa-bookmark"></i><span>Saved</span></button>
+                    <button class="chirp-nav-btn" data-sp="profile"><div class="chirp-nav-badge" data-sp="profile"></div><i class="fa-regular fa-user"></i><span>Profile</span></button>
+                </nav>
             </div>
         </div>
-    </div>`;
+    </div>`
 }
 
 function buildChatBarButton() {
-    return `<div id="whispers-chat-btn" title="Open Whispers Assistant" class="interactable">
+    return `<div id="whispers-chat-btn" title="Open Whispers" class="interactable">
         <i class="fa-solid fa-ghost"></i>
+        <div class="whispers-notif-dot" id="whispers-notif-dot"></div>
     </div>`;
 }
 
@@ -880,6 +1008,8 @@ function renderNpcList() {
         folderEl.dataset.id = folder.id;
         folderEl.style.setProperty('--folder-color', folder.color || '#888');
 
+        const _folderOn = folder.enabled !== false;
+        if (!_folderOn) folderEl.classList.add('disabled');
         folderEl.innerHTML = `
             <div class="whispers-folder-header">
                 <span class="whispers-folder-icon" style="color:${folder.color || 'inherit'}">
@@ -888,6 +1018,7 @@ function renderNpcList() {
                 <span class="whispers-folder-name">${escapeHtml(folder.name || 'Folder')}</span>
                 <span class="whispers-folder-count">${folderNpcs.length}</span>
                 <span class="whispers-folder-actions">
+                    <button class="toggle-folder-en" title="${_folderOn ? 'Выключить' : 'Включить'} папку"><i class="fa-solid ${_folderOn ? 'fa-toggle-on' : 'fa-toggle-off'}" style="color:${_folderOn ? '#00ba7c' : 'inherit'}"></i></button>
                     <button class="edit-folder-btn" title="Edit"><i class="fa-solid fa-pen"></i></button>
                     <button class="export-folder-btn" title="Export"><i class="fa-solid fa-file-export"></i></button>
                     <button class="delete-btn" title="Delete"><i class="fa-solid fa-trash"></i></button>
@@ -903,6 +1034,12 @@ function renderNpcList() {
             folderEl.classList.toggle('open');
         });
 
+        folderEl.querySelector('.toggle-folder-en').addEventListener('click', (e) => {
+            e.stopPropagation();
+            folder.enabled = (folder.enabled === false) ? true : false;
+            saveSettings();
+            renderNpcList();
+        });
         folderEl.querySelector('.edit-folder-btn').addEventListener('click', (e) => {
             e.stopPropagation();
             showNpcFolderEditPopup(folder);
@@ -1031,6 +1168,13 @@ function showNpcEditPopup(npc) {
                     <textarea class="w-edit-bans" rows="2" placeholder="Never mention...">${escapeHtml(npc.bans || '')}</textarea>
                 </div>
                 <div class="whispers-field-group">
+                    <label><i class="fa-solid fa-folder"></i> Folder</label>
+                    <select class="w-edit-folder">
+                        <option value="">— No folder —</option>
+                        ${(getSettings().npcFolders||[]).map(f=>`<option value="${escapeHtml(f.id)}" ${npc.folderId===f.id?'selected':''}>${escapeHtml(f.name)}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="whispers-field-group">
                     <label><i class="fa-solid fa-link"></i> Binding</label>
                     <select class="w-edit-binding">
                         <option value="none" ${npc.binding === 'none' || !npc.binding ? 'selected' : ''}>None</option>
@@ -1066,6 +1210,9 @@ function showNpcEditPopup(npc) {
         npc.character = body.querySelector('.w-edit-character').value || '';
         npc.postExample = body.querySelector('.w-edit-example').value || '';
         npc.bans = body.querySelector('.w-edit-bans').value || '';
+
+        const _folderVal = body.querySelector('.w-edit-folder')?.value || '';
+        npc.folderId = _folderVal || null;
 
         const newBinding = body.querySelector('.w-edit-binding').value;
         npc.binding = newBinding;
@@ -1160,6 +1307,13 @@ function showNpcFolderEditPopup(folder) {
 // ── Overlay Panel Switching ─────────────────────────────────────
 
 function updateOverlayPanels() {
+    // Expand window when chirp feed is active
+    const overlay = document.getElementById('whispers-overlay');
+    const win = overlay?.querySelector('.whispers-chat-window');
+    if (win) {
+        const s = getSettings();
+        win.classList.toggle('chirp-expanded', s.twitterMode === true);
+    }
     const s = getSettings();
     const tabBar = document.getElementById('whispers-overlay-tabs');
     const chatPanel = document.getElementById('whispers-panel-chat');
@@ -2411,7 +2565,22 @@ function applyOverlayTheme() {
 
 function openChat() {
     const o = document.getElementById('whispers-overlay');
-    if (o) { applyOverlayTheme(); o.classList.add('open'); updateChatHeader(); renderChatMessages(); setTimeout(() => document.getElementById('whispers-input')?.focus(), 350); }
+    if (o) {
+        applyOverlayTheme();
+        o.classList.add('open');
+        updateChatHeader();
+        renderChatMessages();
+        const s = getSettings();
+        const win = o.querySelector('.whispers-chat-window');
+        if (win) win.classList.toggle('chirp-expanded', s.twitterMode === true);
+        if (s.twitterMode) {
+            chirpRenderComposeAv();
+            if (chirpActiveSubPanel === 'home') chirpRenderFeed();
+            else if (chirpActiveSubPanel === 'profile') chirpRenderProfile(null);
+            chirpUpdateNotifBadge();
+        }
+        setTimeout(() => document.getElementById('whispers-input')?.focus(), 350);
+    }
 }
 
 function closeChat() {
@@ -2533,6 +2702,7 @@ function loadSettingsUI() {
 
     renderItemList();
     renderNpcList();
+    chirpLoadSocialSettings();
 }
 
 function setupTabs() {
@@ -2846,6 +3016,60 @@ function bindEvents() {
         });
     });
 
+    // ── Social / Chirp tab events ─────────────────────────────
+    chirpBindSocialSettingsEvents();
+
+    // ── Chirp bottom nav ──────────────────────────────────────
+    document.querySelectorAll('.chirp-nav-btn[data-sp]').forEach(btn => {
+        btn.addEventListener('click', () => chirpSwitchSubPanel(btn.dataset.sp));
+    });
+
+    // ── Chirp compose ─────────────────────────────────────────
+    const chirpInput = document.getElementById('chirp-compose-input');
+    const chirpPostBtn = document.getElementById('chirp-post-btn');
+    const chirpCharCount = document.getElementById('chirp-char-count');
+    if (chirpInput) {
+        chirpInput.addEventListener('input', () => {
+            const len = chirpInput.value.length;
+            const rem = 280 - len;
+            if (chirpCharCount) {
+                chirpCharCount.textContent = rem;
+                chirpCharCount.className = 'chirp-char-count' + (rem < 20 ? ' warn' : '') + (rem < 0 ? ' over' : '');
+            }
+            if (chirpPostBtn) chirpPostBtn.disabled = len === 0 || len > 280;
+            chirpInput.style.height = 'auto';
+            chirpInput.style.height = Math.min(chirpInput.scrollHeight, 110) + 'px';
+        });
+        chirpInput.addEventListener('keydown', e => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (!chirpPostBtn?.disabled) chirpPostBtn.click(); }
+        });
+    }
+    chirpPostBtn?.addEventListener('click', async () => {
+        const content = chirpInput?.value?.trim();
+        if (!content) return;
+        chirpPostBtn.disabled = true;
+        const _qid = chirpInput?.dataset?.quotedPostId || null;
+        await chirpPostUserTweet(content, _qid);
+        if (chirpInput) { chirpInput.value = ''; chirpInput.style.height = 'auto'; delete chirpInput.dataset.quotedPostId; }
+        document.getElementById('chirp-compose-quote-preview')?.remove();
+        if (chirpCharCount) { chirpCharCount.textContent = '280'; chirpCharCount.className = 'chirp-char-count'; }
+        chirpPostBtn.disabled = false;
+    });
+
+    // ── Chirp generate btn ────────────────────────────────────
+    document.getElementById('chirp-gen-btn')?.addEventListener('click', chirpGenerateFeed);
+
+    // ── Chirp compose avatar → profile ───────────────────────
+    document.getElementById('chirp-compose-av-el')?.addEventListener('click', () => {
+        chirpSwitchSubPanel('profile');
+        chirpRenderProfile(null);
+    });
+
+    // ── Chirp modal back ──────────────────────────────────────
+    document.getElementById('chirp-modal-back')?.addEventListener('click', () => {
+        const layer = document.getElementById('chirp-modal-layer');
+        if (layer) layer.style.display = 'none';
+    });
 }
 
 // ── Init ────────────────────────────────────────────────────────
@@ -2891,6 +3115,9 @@ function bindEvents() {
         renderNpcList();
         renderTwitterFeed();
         updateOverlayPanels();
+        chirpActiveDmNpcId = null;
+        if (getSettings().twitterMode) chirpRenderFeed();
+        chirpUpdateNotifBadge();
     });
 
     // Hook into main chat messages for automation
@@ -2900,3 +3127,1120 @@ function bindEvents() {
 
     console.log('[Whispers] Extension loaded v2');
 })();
+
+// ============================================================
+// ██████████ CHIRP SOCIAL SYSTEM — Whispers v2.1 ████████████
+// ============================================================
+
+// ── State ────────────────────────────────────────────────────────
+let chirpActiveSubPanel = 'home';
+let chirpActiveDmNpcId = null;
+let chirpGenerating = false;
+let chirpCtxMenu = null;
+let chirpOpenReplyPostId = null;
+
+// ── Tiny helpers ──────────────────────────────────────────────────
+function chirpEl(id) { return document.getElementById(id); }
+function chirpEsc(t) { const d = document.createElement('div'); d.textContent = String(t ?? ''); return d.innerHTML; }
+function chirpRelTime(ts) {
+    if (!ts) return '';
+    const d = Date.now() - ts;
+    if (d < 60000) return 'now';
+    if (d < 3600000) return Math.floor(d / 60000) + 'm';
+    if (d < 86400000) return Math.floor(d / 3600000) + 'h';
+    return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// ── Storage ───────────────────────────────────────────────────────
+function chirpGetPosts() { const m = getChatMeta(); if (!m) return []; return (m.chirp_posts = m.chirp_posts || []); }
+function chirpSavePosts(p) { const m = getChatMeta(); if (m) { m.chirp_posts = p; } }
+function chirpGetDMs() { const m = getChatMeta(); if (!m) return {}; return (m.chirp_dms = m.chirp_dms || {}); }
+function chirpSaveDMs(d) { const m = getChatMeta(); if (m) m.chirp_dms = d; }
+function chirpGetNotifs() { const m = getChatMeta(); if (!m) return []; return (m.chirp_notifs = m.chirp_notifs || []); }
+function chirpSaveNotifs(n) { const m = getChatMeta(); if (m) m.chirp_notifs = n; }
+function chirpGetBookmarks() { const m = getChatMeta(); if (!m) return []; return (m.chirp_bookmarks = m.chirp_bookmarks || []); }
+function chirpSaveBookmarks(b) { const m = getChatMeta(); if (m) m.chirp_bookmarks = b; }
+
+function chirpAddNotif(notif) {
+    const n = chirpGetNotifs();
+    n.unshift({ id: generateId(), read: false, timestamp: Date.now(), ...notif });
+    if (n.length > 80) n.splice(80);
+    chirpSaveNotifs(n);
+    chirpUpdateBadges();
+}
+
+function chirpUpdateBadges() {
+    const unreadN = chirpGetNotifs().filter(n => !n.read).length;
+    const badge = document.querySelector('.chirp-nav-badge[data-sp="notifs"]');
+    if (badge) { badge.textContent = unreadN > 99 ? '99+' : unreadN; badge.classList.toggle('show', unreadN > 0); }
+
+    const dms = chirpGetDMs(); let unreadDM = 0;
+    for (const conv of Object.values(dms)) if (Array.isArray(conv)) unreadDM += conv.filter(m => m.role === 'npc' && !m.read).length;
+    const dmBadge = document.querySelector('.chirp-nav-badge[data-sp="dms"]');
+    if (dmBadge) { dmBadge.textContent = unreadDM > 99 ? '99+' : unreadDM; dmBadge.classList.toggle('show', unreadDM > 0); }
+
+    const total = unreadN + unreadDM;
+    const dot = chirpEl('whispers-notif-dot');
+    if (dot) dot.style.display = total > 0 ? 'block' : 'none';
+    const ghostBtn = chirpEl('whispers-chat-btn');
+    if (ghostBtn) ghostBtn.classList.toggle('has-notifs', total > 0);
+}
+
+// ── NPC helpers ───────────────────────────────────────────────────
+function chirpGetActiveNpcs() { return getActiveNpcs(); }
+function chirpGetNpcById(id) { return (getSettings().npcAssistants || []).find(n => n.id === id) || null; }
+function chirpGetAuthor(authorId) {
+    if (!authorId || authorId === 'user') { const u = getSettings().chirpUserProfile; return { name: u.name || 'You', username: u.username || 'player', avatar: u.avatar || null, isUser: true }; }
+    const npc = chirpGetNpcById(authorId);
+    return npc ? { name: npc.name, username: npc.username, avatar: npc.avatar || null, isUser: false } : { name: 'Unknown', username: 'unknown', avatar: null, isUser: false };
+}
+
+// ── Affection / Love system ────────────────────────────────────────
+const LOVE_STAGES = [
+    { min: 0,  max: 19,  label: 'Stranger',     icon: '<i class="fa-regular fa-circle-dot" style="color:#888"></i>',  color: '#888',    hearts: 0 },
+    { min: 20, max: 39,  label: 'Acquaintance',  icon: '<i class="fa-solid fa-circle-dot" style="color:#8ab77a"></i>', color: '#8ab77a', hearts: 1 },
+    { min: 40, max: 59,  label: 'Friend',        icon: '<i class="fa-solid fa-star" style="color:#5ab4f0"></i>',        color: '#5ab4f0', hearts: 2 },
+    { min: 60, max: 79,  label: 'Close Friend',  icon: '<i class="fa-solid fa-star-half-stroke" style="color:#a86fd1"></i>', color: '#a86fd1', hearts: 3 },
+    { min: 80, max: 94,  label: 'Devoted',       icon: '<i class="fa-solid fa-heart" style="color:#e07840"></i>',       color: '#e07840', hearts: 4 },
+    { min: 95, max: 100, label: 'Soulbound',     icon: '<i class="fa-solid fa-heart-pulse" style="color:#e04060"></i>', color: '#e04060', hearts: 5 },
+];
+
+function chirpGetLoveStage(affection) { return LOVE_STAGES.find(s => affection >= s.min && affection <= s.max) || LOVE_STAGES[0]; }
+function chirpGetAffection(npcId) { const npc = chirpGetNpcById(npcId); return npc ? (npc._affection || 0) : 0; }
+
+// Affection reasons
+const CHIRP_AFF_REASONS = {
+    dm_reply:    { delta: 2, label: 'ответ в личке' },
+    dm_first:    { delta: 4, label: 'первое сообщение!' },
+    post_liked:  { delta: 1, label: 'лайкнул пост' },
+    npc_reply:   { delta: 1, label: 'ответил в треде' },
+    user_reply:  { delta: 1, label: 'твой ответ' },
+};
+
+function chirpAddAffectionReason(npcId, reasonKey) {
+    const cfg = CHIRP_AFF_REASONS[reasonKey] || { delta: 1, label: 'взаимодействие' };
+    _chirpApplyAffDelta(npcId, cfg.delta, cfg.label);
+}
+
+function chirpAddAffection(npcId, delta) {
+    _chirpApplyAffDelta(npcId, delta, 'взаимодействие');
+}
+
+function _chirpApplyAffDelta(npcId, delta, label) {
+    const s = getSettings();
+    const npc = s.npcAssistants?.find(n => n.id === npcId);
+    if (!npc) return;
+    const prev = npc._affection || 0;
+    npc._affection = Math.max(0, Math.min(100, prev + delta));
+    if (!npc._affectionLog) npc._affectionLog = [];
+    npc._affectionLog.unshift({ ts: Date.now(), delta, label });
+    if (npc._affectionLog.length > 25) npc._affectionLog.pop();
+    const prevStage = chirpGetLoveStage(prev);
+    const newStage = chirpGetLoveStage(npc._affection);
+    if (prevStage.label !== newStage.label) chirpShowLoveEvent(npc, newStage);
+    saveSettings();
+}
+
+function chirpShowLoveEvent(npc, stage) {
+    const popup = document.createElement('div');
+    popup.className = 'chirp-love-popup';
+    popup.innerHTML = `
+        <div class="chirp-love-popup-inner">
+            <div class="chirp-love-popup-av">${npc.avatar ? `<img src="${chirpEsc(npc.avatar)}" alt="">` : chirpEsc((npc.name||'?')[0])}</div>
+            <div class="chirp-love-popup-icon">${stage.icon}</div>
+            <div class="chirp-love-popup-name">${chirpEsc(npc.name)}</div>
+            <div class="chirp-love-popup-stage" style="color:${stage.color};">${stage.label}</div>
+            <div class="chirp-love-popup-msg">Your relationship has changed!</div>
+        </div>`;
+    document.body.appendChild(popup);
+    setTimeout(() => popup.classList.add('visible'), 50);
+    setTimeout(() => { popup.classList.remove('visible'); setTimeout(() => popup.remove(), 600); }, 3500);
+}
+
+function chirpHeartsHtml(affection, size = 'sm') {
+    const stage = chirpGetLoveStage(affection);
+    const pct = Math.round(((affection - stage.min) / (stage.max - stage.min || 1)) * 100);
+    const filled = stage.hearts;
+    const total = 5;
+    let h = '';
+    for (let i = 0; i < total; i++) {
+        h += `<span style="color:${i < filled ? stage.color : 'rgba(128,128,128,0.25)'}">♥</span>`;
+    }
+    return `<span class="chirp-hearts chirp-hearts-${size}" title="${stage.label} (${affection}/100)">${h}</span>`;
+}
+
+// ── API wrapper ───────────────────────────────────────────────────
+async function chirpCallApi(messages) { return await callApi(messages); }
+
+// ── Generate feed ─────────────────────────────────────────────────
+async function chirpGenerateFeed() {
+    if (chirpGenerating) return;
+    const npcs = chirpGetActiveNpcs();
+    if (!npcs.length) { toastr.warning('No active NPC Assistants. Add some in Settings → Assistants → NPC Assistants.'); return; }
+    chirpGenerating = true;
+    const genBtn = chirpEl('chirp-gen-btn');
+    if (genBtn) { genBtn.disabled = true; genBtn.innerHTML = '<div class="chirp-spin"></div> Generating…'; }
+    try {
+        const s = getSettings();
+        const npcCards = npcs.map(n => `ID: ${n.id}\nName: ${n.name}\nHandle: @${n.username}\nPersonality: ${n.character || 'Friendly'}\nPost style: ${n.postExample || 'Casual'}`).join('\n\n');
+        const context = gatherContext();
+        const count = s.chirpPostCount || 4;
+        const _userHandle = s.chirpUserProfile?.username || 'player';
+        let prompt = (s.chirpFeedPrompt || chirpDefaults.chirpFeedPrompt)
+            .replace(/\{\{npc_cards\}\}/g, npcCards)
+            .replace(/\{\{context\}\}/g, context)
+            .replace(/\{\{post_count\}\}/g, count)
+            .replace(/\{\{user_handle\}\}/g, _userHandle);
+        const raw = await chirpCallApi([
+            { role: 'system', content: 'Output ONLY valid JSON arrays. No markdown fences, no explanations.' },
+            { role: 'user', content: prompt }
+        ]);
+        let parsed;
+        try { parsed = JSON.parse(raw.replace(/```json|```/g, '').trim()); }
+        catch { toastr.error('Failed to parse feed posts. Try again.'); return; }
+        const posts = chirpGetPosts();
+        const now = Date.now();
+        const batch = [];
+        for (let i = 0; i < parsed.length; i++) {
+            const p = parsed[i];
+            if (!p.npcId || !p.content) continue;
+            const npc = npcs.find(n => n.id === p.npcId) || npcs[i % npcs.length];
+            if (!npc) continue;
+            const post = { id: generateId(), authorId: npc.id, content: String(p.content).slice(0, 280), timestamp: now - (parsed.length - i) * 11000, likes: [], retweets: [], replies: [], replyToId: null };
+            if (p.replyTo != null && batch[p.replyTo]) {
+                post.replyToId = batch[p.replyTo].id;
+                batch[p.replyTo].replies.push(post.id);
+            }
+            batch.push(post);
+        }
+        posts.unshift(...batch);
+        if (posts.length > 400) posts.splice(400);
+        chirpSavePosts(posts);
+        await saveChatMeta();
+        chirpRenderFeed();
+        toastr.success(`${batch.length} posts generated!`);
+        setTimeout(() => chirpGenerateOrganicReactions(batch), 900);
+    } catch (err) {
+        console.error('[Chirp] Generate error:', err);
+        toastr.error('Generation failed: ' + err.message);
+    } finally {
+        chirpGenerating = false;
+        if (genBtn) { genBtn.disabled = false; genBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Generate'; }
+    }
+}
+
+// ── Post user tweet ───────────────────────────────────────────────
+async function chirpPostUserTweet(text, quotedPostId = null) {
+    const post = { id: generateId(), authorId: 'user', content: text.slice(0, 280), timestamp: Date.now(), likes: [], retweets: [], replies: [], replyToId: null, quotedPostId: quotedPostId || null };
+    const posts = chirpGetPosts();
+    posts.unshift(post);
+    chirpSavePosts(posts);
+    await saveChatMeta();
+    chirpRenderFeed();
+    setTimeout(() => chirpApplyGrowthReactions(post.id), 700);
+}
+
+
+// ── Text formatting (markdown-lite + @mention) ───────────────────
+function chirpFormatContent(text) {
+    let h = String(text)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    h = h.replace(/\*\*\*((?:.)*?)\*\*\*/g,'<strong><em>$1</em></strong>');
+    h = h.replace(/\*\*((?:.)*?)\*\*/g,'<strong>$1</strong>');
+    h = h.replace(/\*((?:.)*?)\*/g,'<em>$1</em>');
+    h = h.replace(/~~((?:.)*?)~~/g,'<del>$1</del>');
+    h = h.replace(/@(\w+)/g,'<span class="chirp-mention" data-mention="$1">@$1</span>');
+    h = h.replace(/\n/g,'<br>');
+    return h;
+}
+
+// ── Growth reactions (token-free) ────────────────────────────────
+function chirpApplyGrowthReactions(postId) {
+    const posts = chirpGetPosts();
+    const post = posts.find(p => p.id === postId);
+    if (!post) return;
+    const npcs = chirpGetActiveNpcs();
+    if (!npcs.length) return;
+    const s = getSettings();
+    let changed = false;
+    for (const npc of npcs) {
+        if (npc.id !== post.authorId && Math.random() < 0.35 && !post.likes.includes(npc.id)) {
+            post.likes.push(npc.id);
+            chirpAddAffectionReason(npc.id, 'post_liked');
+            chirpAddNotif({ type: 'like', actorId: npc.id, actorName: npc.name, actorAvatar: npc.avatar, postId, message: 'лайкнул твой пост', quote: post.content.slice(0,70) });
+            changed = true;
+        }
+        if (Math.random() < 0.10) {
+            if (!s.chirpUserProfile._followers) s.chirpUserProfile._followers = 0;
+            s.chirpUserProfile._followers++;
+            saveSettings();
+        }
+    }
+    if (changed) { chirpSavePosts(posts); saveChatMeta(); chirpUpdateBadges(); if (chirpActiveSubPanel==='home') chirpRenderFeed(); }
+}
+
+// ── Post-generate organic reactions ──────────────────────────────
+function chirpGenerateOrganicReactions(batch) {
+    const posts = chirpGetPosts();
+    let changed = false;
+    for (let i = 0; i < batch.length; i++) {
+        const post = posts.find(p => p.id === batch[i].id);
+        if (!post) continue;
+        for (let j = 0; j < batch.length; j++) {
+            if (i === j) continue;
+            const otherId = batch[j].authorId;
+            if (otherId !== post.authorId && Math.random() < 0.4 && !post.likes.includes(otherId)) {
+                post.likes.push(otherId);
+                changed = true;
+            }
+        }
+    }
+    const userPosts = posts.filter(p => p.authorId === 'user').slice(0, 3);
+    const activeNpcs = chirpGetActiveNpcs();
+    if (userPosts.length && activeNpcs.length && Math.random() < 0.25) {
+        const target = userPosts[Math.floor(Math.random() * userPosts.length)];
+        const npc = activeNpcs[Math.floor(Math.random() * activeNpcs.length)];
+        setTimeout(() => chirpNpcAutoReplyTo(target.id, npc), 1300);
+    }
+    if (changed) { chirpSavePosts(posts); saveChatMeta(); if (chirpActiveSubPanel==='home') chirpRenderFeed(); }
+}
+
+// ── NPC auto-reply to a post ──────────────────────────────────────
+async function chirpNpcAutoReplyTo(replyPostId, npc) {
+    const posts = chirpGetPosts();
+    const post = posts.find(p => p.id === replyPostId);
+    if (!post) return;
+    try {
+        const u = getSettings().chirpUserProfile;
+        const pAuthor = chirpGetAuthor(post.authorId);
+        const sys = `You are ${npc.name} (@${npc.username}) on Deerly. Personality: ${npc.character || 'Friendly'}.\n@${pAuthor.username} wrote: "${post.content}"\nWrite a short reply (max 200 chars). Plain text only.`;
+        const raw = await chirpCallApi([{ role:'system', content:sys },{ role:'user', content:'Reply:' }]);
+        if (raw?.trim()) {
+            const freshPosts = chirpGetPosts();
+            const freshPost = freshPosts.find(p => p.id === replyPostId);
+            if (!freshPost) return;
+            const npcReply = { id: generateId(), authorId: npc.id, content: raw.trim().slice(0, 240), timestamp: Date.now(), likes: [], retweets: [], replies: [], replyToId: replyPostId };
+            freshPost.replies.push(npcReply.id);
+            freshPosts.unshift(npcReply);
+            chirpAddAffectionReason(npc.id, 'npc_reply');
+            chirpSavePosts(freshPosts);
+            await saveChatMeta();
+            chirpAddNotif({ type:'reply', actorId:npc.id, actorName:npc.name, actorAvatar:npc.avatar, postId:npcReply.id, message:'ответил на твой пост', quote:npcReply.content.slice(0,70) });
+            chirpUpdateBadges();
+            if (chirpActiveSubPanel === 'home') chirpRenderFeed();
+        }
+    } catch (err) { console.error('[Deerly] NPC auto-reply:', err); }
+}
+
+// ── Feed prompt update: user_handle placeholder ───────────────────
+
+// ── Tweet card builder ────────────────────────────────────────────
+function chirpBuildCard(post, opts = {}) {
+    const { compact = false } = opts;
+    const author = chirpGetAuthor(post.authorId);
+    const isLiked = post.likes.includes('user');
+    const isRted = post.retweets.includes('user');
+    const bookmarks = chirpGetBookmarks();
+    const isBookmarked = bookmarks.includes(post.id);
+
+    let quoteHtml = '';
+    if (post.quotedPostId) {
+        const qp = chirpGetPosts().find(p => p.id === post.quotedPostId);
+        if (qp) {
+            const qa = chirpGetAuthor(qp.authorId);
+            quoteHtml = `<div class="chirp-quote-block"><div class="chirp-quote-head"><b>${chirpEsc(qa.name)}</b> <span style="opacity:0.5">@${chirpEsc(qa.username)}</span></div><div class="chirp-quote-txt">${chirpFormatContent(qp.content)}</div></div>`;
+        }
+    }
+
+    const avContent = author.avatar ? `<img src="${chirpEsc(author.avatar)}" alt="">` : `<span style="font-size:15px;font-weight:700;">${chirpEsc((author.name||'?')[0])}</span>`;
+
+    return `
+<div class="chirp-tweet-card${compact?' chirp-card-compact':''}" data-pid="${post.id}">
+  <div class="chirp-card-inner">
+    <div class="chirp-tweet-av chirp-av-click" data-author="${chirpEsc(post.authorId)}">${avContent}</div>
+    <div class="chirp-tweet-main">
+      <div class="chirp-tweet-head">
+        <span class="chirp-tweet-name chirp-author-click" data-author="${chirpEsc(post.authorId)}">${chirpEsc(author.name)}</span>
+        <span class="chirp-tweet-handle">@${chirpEsc(author.username)}</span>
+        <span class="chirp-tweet-dot">·</span>
+        <span class="chirp-tweet-ts">${chirpRelTime(post.timestamp)}</span>
+        <button class="chirp-more-btn" data-pid="${post.id}"><i class="fa-solid fa-ellipsis"></i></button>
+      </div>
+      <div class="chirp-tweet-txt chirp-open-thread" data-pid="${post.id}">${chirpFormatContent(post.content)}</div>
+      ${quoteHtml}
+      <div class="chirp-tweet-actions-row">
+        <button class="chirp-act-btn chirp-reply-act" data-pid="${post.id}"><i class="fa-regular fa-comment"></i><span>${post.replies.length||''}</span></button>
+        <button class="chirp-act-btn chirp-rt-act${isRted?' rted':''}" data-pid="${post.id}"><i class="fa-solid fa-retweet"></i><span>${post.retweets.length||''}</span></button>
+        <button class="chirp-act-btn chirp-like-act${isLiked?' liked':''}" data-pid="${post.id}"><i class="${isLiked?'fa-solid':'fa-regular'} fa-heart"></i><span>${post.likes.length||''}</span></button>
+        <button class="chirp-act-btn chirp-bookmark-act${isBookmarked?' bookmarked':''}" data-pid="${post.id}" title="${isBookmarked?'Remove bookmark':'Bookmark'}"><i class="${isBookmarked?'fa-solid':'fa-regular'} fa-bookmark"></i></button>
+      </div>
+    </div>
+  </div>
+</div>`;
+}
+
+// ── Feed render ───────────────────────────────────────────────────
+function chirpRenderFeed() {
+    const scroll = chirpEl('chirp-feed-scroll');
+    if (!scroll) return;
+    const posts = chirpGetPosts();
+    scroll.innerHTML = '';
+    if (!posts.length) {
+        scroll.innerHTML = `<div class="chirp-empty-state"><i class="fa-solid fa-feather-pointed"></i><div class="chirp-empty-title">Nothing here yet</div><div class="chirp-empty-sub">Hit Generate or write your first post!</div></div>`;
+        return;
+    }
+    const topPosts = posts.filter(p => !p.replyToId).slice(0, 60);
+    for (const post of topPosts) {
+        scroll.insertAdjacentHTML('beforeend', chirpBuildCard(post));
+        // Show 1 preview reply
+        const replyIds = post.replies || [];
+        if (replyIds.length > 0) {
+            const firstReply = posts.find(p => p.id === replyIds[0]);
+            if (firstReply) {
+                const wrap = document.createElement('div');
+                wrap.style.paddingLeft = '52px';
+                wrap.innerHTML = chirpBuildCard(firstReply, { compact: true });
+                scroll.appendChild(wrap);
+                if (replyIds.length > 1) {
+                    const more = document.createElement('div');
+                    more.className = 'chirp-show-more-replies';
+                    more.dataset.pid = post.id;
+                    more.innerHTML = `<i class="fa-solid fa-turn-down-right" style="transform:rotate(180deg);margin-right:5px;opacity:0.5;"></i> ${replyIds.length - 1} more repl${replyIds.length-1===1?'y':'ies'}`;
+                    scroll.appendChild(more);
+                }
+            }
+        }
+    }
+    chirpBindFeedEvents(scroll);
+}
+
+function chirpBindFeedEvents(container) {
+    container.querySelectorAll('.chirp-mention').forEach(span => span.addEventListener('click', e => {
+        e.stopPropagation();
+        const _mHandle = span.dataset.mention;
+        if (!_mHandle) return;
+        const _mNpc = (getSettings().npcAssistants||[]).find(n => n.username === _mHandle);
+        if (_mNpc) chirpOpenProfileModal(_mNpc.id);
+    }));
+    container.querySelectorAll('.chirp-like-act').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); chirpToggleLike(b.dataset.pid); }));
+    container.querySelectorAll('.chirp-rt-act').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); chirpShowRtMenu(b.dataset.pid, e); }));
+    container.querySelectorAll('.chirp-reply-act').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); chirpOpenThread(b.dataset.pid, true); }));
+    container.querySelectorAll('.chirp-bookmark-act').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); chirpToggleBookmark(b.dataset.pid); }));
+    container.querySelectorAll('.chirp-more-btn').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); chirpShowCtxMenu(b.dataset.pid, e); }));
+    container.querySelectorAll('.chirp-author-click,.chirp-av-click').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); chirpOpenProfileModal(el.dataset.author || el.dataset.avAuthor || el.dataset.author); }));
+    container.querySelectorAll('.chirp-open-thread').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); chirpOpenThread(el.dataset.pid, false); }));
+    container.querySelectorAll('.chirp-show-more-replies').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); chirpOpenThread(el.dataset.pid, false); }));
+}
+
+// ── Thread view ───────────────────────────────────────────────────
+function chirpOpenThread(pid, focusReply) {
+    const layer = chirpEl('chirp-modal-layer');
+    if (!layer) return;
+    layer.style.display = 'flex';
+    layer.dataset.mode = 'thread';
+    const titleEl = chirpEl('chirp-modal-title');
+    if (titleEl) titleEl.textContent = 'Thread';
+
+    const scroll = chirpEl('chirp-modal-scroll');
+    if (!scroll) return;
+
+    const posts = chirpGetPosts();
+    const post = posts.find(p => p.id === pid);
+    if (!post) return;
+
+    // Build parent chain
+    const chain = [];
+    let cur = post;
+    while (cur.replyToId) { const parent = posts.find(p => p.id === cur.replyToId); if (!parent) break; chain.unshift(parent); cur = parent; }
+
+    scroll.innerHTML = '';
+
+    // Parent chain (greyed)
+    for (const p of chain) {
+        const wrapper = document.createElement('div');
+        wrapper.style.opacity = '0.65';
+        wrapper.innerHTML = chirpBuildCard(p, { compact: true });
+        const connector = document.createElement('div');
+        connector.className = 'chirp-thread-connector';
+        scroll.appendChild(wrapper);
+        scroll.appendChild(connector);
+    }
+
+    // Main post
+    scroll.insertAdjacentHTML('beforeend', chirpBuildCard(post));
+
+    // Divider
+    scroll.insertAdjacentHTML('beforeend', `<div class="chirp-divider-label" style="margin:0;"><i class="fa-solid fa-reply"></i> Replies</div>`);
+
+    // All replies recursively
+    function appendReplies(replyIds, depth) {
+        for (const rid of replyIds) {
+            const r = posts.find(p => p.id === rid);
+            if (!r) continue;
+            const wrapper = document.createElement('div');
+            wrapper.style.paddingLeft = Math.min(depth * 24, 72) + 'px';
+            wrapper.innerHTML = chirpBuildCard(r, { compact: depth > 0 });
+            scroll.appendChild(wrapper);
+            if (r.replies?.length) appendReplies(r.replies, depth + 1);
+        }
+    }
+    appendReplies(post.replies || [], 0);
+
+    // Reply composer at bottom
+    const u = getSettings().chirpUserProfile;
+    const avHtml = u.avatar ? `<img src="${chirpEsc(u.avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : `<span style="font-size:14px;font-weight:700;">${chirpEsc((u.name||'?')[0])}</span>`;
+    const composer = document.createElement('div');
+    composer.className = 'chirp-thread-composer';
+    composer.innerHTML = `<div class="chirp-thread-composer-av">${avHtml}</div><div style="flex:1;"><textarea class="chirp-reply-field" id="chirp-thread-reply-field" placeholder="Reply to ${chirpEsc(chirpGetAuthor(post.authorId).name)}…" rows="1" maxlength="280"></textarea></div><button class="chirp-reply-send-btn" id="chirp-thread-reply-send">Reply</button>`;
+    scroll.appendChild(composer);
+
+    chirpBindFeedEvents(scroll);
+
+    const field = chirpEl('chirp-thread-reply-field');
+    const send = chirpEl('chirp-thread-reply-send');
+    if (field) {
+        field.addEventListener('input', () => { send.disabled = !field.value.trim(); field.style.height = 'auto'; field.style.height = field.scrollHeight + 'px'; });
+        field.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!send?.disabled) send.click(); } });
+    }
+    send?.addEventListener('click', async () => {
+        const text = field?.value?.trim(); if (!text) return;
+        send.disabled = true;
+        await chirpSubmitReply(pid, text);
+        layer.style.display = 'none';
+        setTimeout(() => chirpOpenThread(pid, false), 50);
+    });
+
+    if (focusReply) setTimeout(() => field?.focus(), 100);
+}
+
+// ── Like / RT / Bookmark ──────────────────────────────────────────
+function chirpToggleLike(pid) {
+    const posts = chirpGetPosts(); const post = posts.find(p => p.id === pid); if (!post) return;
+    const idx = post.likes.indexOf('user');
+    if (idx > -1) { post.likes.splice(idx, 1); }
+    else {
+        post.likes.push('user');
+    }
+    chirpSavePosts(posts); saveChatMeta().then(() => chirpRenderFeed());
+}
+
+function chirpShowRtMenu(pid, evt) {
+    chirpCloseCtxMenu();
+    const menu = document.createElement('div');
+    menu.className = 'chirp-ctx-menu';
+    menu.style.left = evt.clientX + 'px'; menu.style.top = evt.clientY + 'px';
+    menu.innerHTML = `<div class="chirp-ctx-item" data-a="rt"><i class="fa-solid fa-retweet"></i> Repost</div><div class="chirp-ctx-item" data-a="quote"><i class="fa-solid fa-quote-left"></i> Quote</div>`;
+    menu.addEventListener('click', e => {
+        const a = e.target.closest('[data-a]')?.dataset.a;
+        if (a === 'rt') chirpDoRetweet(pid);
+        if (a === 'quote') chirpOpenQuoteCompose(pid);
+        chirpCloseCtxMenu();
+    });
+    document.body.appendChild(menu); chirpCtxMenu = menu;
+    requestAnimationFrame(() => {
+        const r = menu.getBoundingClientRect();
+        if (r.right > window.innerWidth) menu.style.left = (window.innerWidth - r.width - 6) + 'px';
+        if (r.bottom > window.innerHeight) menu.style.top = (evt.clientY - r.height) + 'px';
+    });
+}
+
+function chirpDoRetweet(pid) {
+    const posts = chirpGetPosts(); const post = posts.find(p => p.id === pid); if (!post) return;
+    const idx = post.retweets.indexOf('user');
+    if (idx > -1) { post.retweets.splice(idx, 1); }
+    else {
+        post.retweets.push('user');
+    }
+    chirpSavePosts(posts); saveChatMeta().then(() => chirpRenderFeed());
+}
+
+function chirpOpenQuoteCompose(quotedPostId) {
+    chirpSwitchSubPanel('home');
+    const input = chirpEl('chirp-compose-input'); if (!input) return;
+    input.dataset.quotedPostId = quotedPostId;
+    const qp = chirpGetPosts().find(p => p.id === quotedPostId);
+    const qa = qp ? chirpGetAuthor(qp.authorId) : null;
+    let preview = chirpEl('chirp-compose-quote-preview');
+    if (!preview) { preview = document.createElement('div'); preview.id = 'chirp-compose-quote-preview'; preview.className = 'chirp-compose-quote-preview'; const composeRight = input.parentElement; if (composeRight) composeRight.insertBefore(preview, composeRight.lastElementChild); }
+    preview.innerHTML = qp ? `<div class="chirp-quote-block"><div class="chirp-quote-head"><b>${chirpEsc(qa.name)}</b> <span style="opacity:0.5">@${chirpEsc(qa.username)}</span></div><div class="chirp-quote-txt">${chirpEsc(qp.content)}</div></div><button onclick="this.closest('#chirp-compose-quote-preview').remove();delete document.getElementById('chirp-compose-input')?.dataset.quotedPostId;" style="float:right;background:transparent;border:none;color:var(--chirp-muted);cursor:pointer;font-size:12px;">✕</button>` : '';
+    input.focus();
+}
+
+function chirpToggleBookmark(pid) {
+    const bookmarks = chirpGetBookmarks();
+    const idx = bookmarks.indexOf(pid);
+    if (idx > -1) { bookmarks.splice(idx, 1); toastr.info('Removed from bookmarks'); }
+    else { bookmarks.push(pid); toastr.success('Bookmarked!'); }
+    chirpSaveBookmarks(bookmarks); saveChatMeta();
+    if (chirpActiveSubPanel === 'home') chirpRenderFeed();
+    else if (chirpActiveSubPanel === 'bookmarks') chirpRenderBookmarks();
+}
+
+// ── Submit reply ──────────────────────────────────────────────────
+async function chirpSubmitReply(replyToId, text) {
+    const posts = chirpGetPosts();
+    const parent = posts.find(p => p.id === replyToId); if (!parent) return;
+    const reply = { id: generateId(), authorId: 'user', content: text.slice(0, 280), timestamp: Date.now(), likes: [], retweets: [], replies: [], replyToId };
+    parent.replies.push(reply.id);
+    posts.unshift(reply);
+    chirpSavePosts(posts);
+    await saveChatMeta();
+    if (parent.authorId && parent.authorId !== 'user') {
+        const _rNpc = chirpGetNpcById(parent.authorId);
+        if (_rNpc) setTimeout(() => chirpNpcAutoReplyTo(reply.id, _rNpc), 900);
+    }
+}
+
+// ── NPC react to post ─────────────────────────────────────────────
+async function chirpNpcReact(pid) {
+    const npcs = chirpGetActiveNpcs(); if (!npcs.length) { toastr.warning('No active NPCs'); return; }
+    const posts = chirpGetPosts(); const post = posts.find(p => p.id === pid); if (!post) return;
+    const cands = npcs.filter(n => n.id !== post.authorId);
+    const npc = cands.length ? cands[Math.floor(Math.random() * cands.length)] : npcs[0];
+    const btn = document.querySelector(`.chirp-npc-react-act[data-pid="${pid}"]`);
+    if (btn) { btn.disabled = true; btn.innerHTML = '<div class="chirp-spin"></div>'; }
+    try {
+        const pAuthor = chirpGetAuthor(post.authorId);
+        const sys = `You are ${npc.name} (@${npc.username}) on Deerly. ${npc.character || 'Friendly'}\nReply to this post in max 220 chars. Just plain text:\n"${post.content}" — by @${pAuthor.username}`;
+        const raw = await chirpCallApi([{ role: 'system', content: sys }, { role: 'user', content: 'Write your reply:' }]);
+        if (raw?.trim()) {
+            const replyPost = { id: generateId(), authorId: npc.id, content: raw.trim().slice(0, 240), timestamp: Date.now(), likes: [], retweets: [], replies: [], replyToId: pid };
+            post.replies.push(replyPost.id); posts.unshift(replyPost);
+            chirpSavePosts(posts); await saveChatMeta(); chirpRenderFeed();
+        }
+    } catch (err) { toastr.error('NPC react failed: ' + err.message); }
+    finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-robot"></i>'; } }
+}
+
+// ── Context menu ──────────────────────────────────────────────────
+function chirpShowCtxMenu(pid, evt) {
+    chirpCloseCtxMenu();
+    const post = chirpGetPosts().find(p => p.id === pid); if (!post) return;
+    const isOwn = post.authorId === 'user';
+    const bookmarks = chirpGetBookmarks();
+    const isBookmarked = bookmarks.includes(pid);
+    const menu = document.createElement('div');
+    menu.className = 'chirp-ctx-menu';
+    menu.style.left = evt.clientX + 'px'; menu.style.top = evt.clientY + 'px';
+    menu.innerHTML = `
+      <div class="chirp-ctx-item" data-a="open"><i class="fa-regular fa-comment-dots"></i> Open thread</div>
+      <div class="chirp-ctx-item" data-a="copy"><i class="fa-regular fa-copy"></i> Copy text</div>
+      <div class="chirp-ctx-item" data-a="quote"><i class="fa-solid fa-quote-left"></i> Quote post</div>
+      <div class="chirp-ctx-item" data-a="npc"><i class="fa-solid fa-robot"></i> NPC reaction</div>
+      <div class="chirp-ctx-item" data-a="bm"><i class="${isBookmarked?'fa-solid':'fa-regular'} fa-bookmark"></i> ${isBookmarked?'Remove bookmark':'Bookmark'}</div>
+      ${isOwn ? '<div class="chirp-ctx-item danger" data-a="del"><i class="fa-solid fa-trash"></i> Delete post</div>' : '<div class="chirp-ctx-item" data-a="profile"><i class="fa-regular fa-user"></i> View profile</div>'}`;
+    menu.addEventListener('click', e => {
+        const a = e.target.closest('[data-a]')?.dataset.a;
+        if (a === 'open') chirpOpenThread(pid, false);
+        if (a === 'copy') { navigator.clipboard?.writeText(post.content); toastr.success('Copied!'); }
+        if (a === 'quote') chirpOpenQuoteCompose(pid);
+        if (a === 'npc') chirpNpcReact(pid);
+        if (a === 'bm') chirpToggleBookmark(pid);
+        if (a === 'del') {
+            const ps = chirpGetPosts(); const i = ps.findIndex(p => p.id === pid);
+            if (i > -1) { ps.splice(i, 1); ps.forEach(p => { if (p.replies) p.replies = p.replies.filter(r => r !== pid); }); chirpSavePosts(ps); saveChatMeta().then(() => chirpRenderFeed()); }
+        }
+        if (a === 'profile') chirpOpenProfileModal(post.authorId);
+        chirpCloseCtxMenu();
+    });
+    document.body.appendChild(menu); chirpCtxMenu = menu;
+    requestAnimationFrame(() => {
+        const r = menu.getBoundingClientRect();
+        if (r.right > window.innerWidth) menu.style.left = (window.innerWidth - r.width - 6) + 'px';
+        if (r.bottom > window.innerHeight) menu.style.top = (evt.clientY - r.height) + 'px';
+    });
+}
+function chirpCloseCtxMenu() { if (chirpCtxMenu) { chirpCtxMenu.remove(); chirpCtxMenu = null; } }
+document.addEventListener('click', () => chirpCloseCtxMenu());
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { chirpCloseCtxMenu(); const layer = chirpEl('chirp-modal-layer'); if (layer?.style.display !== 'none') layer.style.display = 'none'; } });
+
+// ── Bookmarks panel ───────────────────────────────────────────────
+function chirpRenderBookmarks() {
+    const scroll = chirpEl('chirp-bm-scroll'); if (!scroll) return;
+    const bookmarks = chirpGetBookmarks();
+    const posts = chirpGetPosts();
+    scroll.innerHTML = '';
+    if (!bookmarks.length) { scroll.innerHTML = `<div class="chirp-empty-state"><i class="fa-regular fa-bookmark"></i><div class="chirp-empty-title">No bookmarks yet</div><div class="chirp-empty-sub">Tap the bookmark icon on any post</div></div>`; return; }
+    for (const bid of bookmarks) {
+        const p = posts.find(x => x.id === bid);
+        if (p) scroll.insertAdjacentHTML('beforeend', chirpBuildCard(p));
+    }
+    chirpBindFeedEvents(scroll);
+}
+
+// ── DM System ─────────────────────────────────────────────────────
+function chirpRenderDmSidebar() {
+    const listEl = chirpEl('chirp-dm-list-el'); if (!listEl) return;
+    const npcs = chirpGetActiveNpcs();
+    const dms = chirpGetDMs();
+    listEl.innerHTML = '';
+    if (!npcs.length) {
+        listEl.innerHTML = `<div class="chirp-empty-state" style="padding:16px 8px;"><i class="fa-regular fa-envelope"></i><div class="chirp-empty-sub" style="font-size:0.76em;text-align:center;">Add NPC Assistants<br>in Settings</div></div>`;
+        return;
+    }
+    for (const npc of npcs) {
+        const conv = dms[npc.id] || [];
+        const last = conv[conv.length - 1];
+        const unread = npc.id !== chirpActiveDmNpcId && conv.some(m => m.role === 'npc' && !m.read);
+        const affection = chirpGetAffection(npc.id);
+        const stage = chirpGetLoveStage(affection);
+        const row = document.createElement('div');
+        row.className = 'chirp-dm-row' + (npc.id === chirpActiveDmNpcId ? ' active' : '') + (unread ? ' unread' : '');
+        row.innerHTML = `
+          <div class="chirp-dm-row-av">
+            ${npc.avatar ? `<img src="${chirpEsc(npc.avatar)}" alt="">` : `<span style="font-size:14px;font-weight:700;">${chirpEsc((npc.name||'?')[0])}</span>`}
+            <div class="chirp-dm-online"></div>
+          </div>
+          <div class="chirp-dm-row-info">
+            <div class="chirp-dm-row-name">${chirpEsc(npc.name)}</div>
+            <div class="chirp-dm-row-preview">${chirpEsc(last ? last.content.slice(0, 36) : 'Say hello!')}</div>
+          </div>
+          <div class="chirp-dm-unread-dot"></div>`;
+        row.addEventListener('click', () => chirpOpenDm(npc.id));
+        listEl.appendChild(row);
+    }
+}
+
+function chirpOpenDm(npcId) {
+    chirpActiveDmNpcId = npcId;
+    const dms = chirpGetDMs();
+    const conv = dms[npcId] || [];
+    conv.forEach(m => { if (m.role === 'npc') m.read = true; });
+    chirpSaveDMs(dms);
+    saveChatMeta();
+    chirpRenderDmSidebar();
+    chirpRenderDmChat(npcId);
+    chirpUpdateBadges();
+}
+
+function chirpRenderDmChat(npcId) {
+    const chatArea = chirpEl('chirp-dm-chat-area'); if (!chatArea) return;
+    const npc = chirpGetNpcById(npcId); if (!npc) return;
+
+    const dmsObj = chirpGetDMs();
+    const conv = Array.isArray(dmsObj[npcId]) ? dmsObj[npcId] : [];
+    const u = getSettings().chirpUserProfile;
+
+    const affection = chirpGetAffection(npcId);
+    const stage = chirpGetLoveStage(affection);
+    const npcAv = npc.avatar ? `<img src="${chirpEsc(npc.avatar)}" alt="">` : `<span style="font-size:13px;font-weight:700;">${chirpEsc((npc.name||'?')[0])}</span>`;
+    const uAv = u.avatar ? `<img src="${chirpEsc(u.avatar)}" alt="">` : `<span style="font-size:11px;font-weight:700;">${chirpEsc((u.name||'?')[0])}</span>`;
+
+    chatArea.innerHTML = `
+      <div class="chirp-dm-chat-hdr">
+        <div class="chirp-dm-av-online chirp-dm-chat-hdr-av chirp-author-click" data-author="${chirpEsc(npc.id)}" style="cursor:pointer;"><span class="chirp-dm-av-inner">${npcAv}</span><span class="chirp-online-dot"></span></div>
+        <div class="chirp-dm-chat-info" style="cursor:pointer;" data-author="${chirpEsc(npc.id)}" class="chirp-author-click">
+          <div class="chirp-dm-chat-name">${chirpEsc(npc.name)}</div>
+          <div class="chirp-dm-chat-handle">@${chirpEsc(npc.username)} <span style="font-size:0.78em;color:${stage.color};margin-left:4px;">${stage.icon} ${stage.label}</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;margin-left:auto;">
+          <div class="chirp-affection-bar" title="${affection}/100"><div class="chirp-affection-fill" style="width:${affection}%;background:${stage.color};"></div></div>
+        </div>
+      </div>
+      <div class="chirp-dm-messages" id="chirp-dm-msgs-${npcId}">
+        ${conv.length === 0 ? `<div class="chirp-empty-state" style="padding:24px;"><i class="fa-regular fa-comments" style="font-size:2em;opacity:0.3;"></i><div class="chirp-empty-title">${chirpEsc(npc.name)}</div><div class="chirp-empty-sub">Напиши первым!</div></div>` : conv.map(m => {
+            const isUser = m.role === 'user';
+            const avHtml = isUser ? uAv : npcAv;
+            return `<div class="chirp-dm-msg ${isUser?'me':'them'}">
+              <div class="chirp-dm-msg-av">${avHtml}</div>
+              <div>
+                <div class="chirp-dm-bubble">${chirpFormatContent(m.content)}
+                  <span class="chirp-dm-bubble-ts">${chirpRelTime(m.timestamp)}</span>
+                </div>
+              </div>
+            </div>`;
+        }).join('')}
+      </div>
+      <div class="chirp-dm-toolbar">
+        <button class="chirp-dm-tool-btn" id="chirp-dm-clear-${npcId}" title="Очистить историю"><i class="fa-regular fa-trash-can"></i></button>
+        <button class="chirp-dm-tool-btn" id="chirp-dm-profile-${npcId}" title="Профиль"><i class="fa-regular fa-user"></i></button>
+        <button class="chirp-dm-tool-btn" id="chirp-dm-export-${npcId}" title="Экспорт диалога"><i class="fa-solid fa-arrow-up-from-bracket"></i></button>
+      </div>
+      <div class="chirp-dm-input-bar">
+        <textarea class="chirp-dm-field" id="chirp-dm-field-${npcId}" placeholder="Сообщение для ${chirpEsc(npc.name)}…" rows="1" maxlength="500"></textarea>
+        <button class="chirp-dm-send-btn" id="chirp-dm-send-${npcId}" disabled title="Отправить"><i class="fa-solid fa-paper-plane"></i></button>
+      </div>`;
+
+    // Bind events
+    chatArea.querySelectorAll('.chirp-author-click').forEach(el => el.addEventListener('click', () => chirpOpenProfileModal(el.dataset.author)));
+
+    // Toolbar buttons
+    chirpEl(`chirp-dm-clear-${npcId}`)?.addEventListener('click', () => {
+        if (!confirm(`Очистить переписку с ${npc.name}?`)) return;
+        const dmsObj = chirpGetDMs();
+        dmsObj[npcId] = [];
+        chirpSaveDMs(dmsObj);
+        saveChatMeta();
+        chirpRenderDmChat(npcId);
+        toastr.success('История очищена');
+    });
+    chirpEl(`chirp-dm-profile-${npcId}`)?.addEventListener('click', () => chirpOpenProfileModal(npcId));
+    chirpEl(`chirp-dm-export-${npcId}`)?.addEventListener('click', () => {
+        const dmsObj = chirpGetDMs();
+        const conv = Array.isArray(dmsObj[npcId]) ? dmsObj[npcId] : [];
+        if (!conv.length) { toastr.info('Нет сообщений для экспорта'); return; }
+        const text = conv.map(m => `[${new Date(m.timestamp).toLocaleString()}] ${m.role === 'user' ? (getSettings().chirpUserProfile.name||'You') : npc.name}: ${m.content}`).join('\n');
+        const blob = new Blob([text], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `deerly-dm-${npc.username}.txt`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    });
+
+    const field = chirpEl(`chirp-dm-field-${npcId}`);
+    const send = chirpEl(`chirp-dm-send-${npcId}`);
+    if (field && send) {
+        field.addEventListener('input', () => {
+            send.disabled = !field.value.trim();
+            field.style.height = 'auto';
+            const sh = field.scrollHeight;
+            field.style.height = Math.min(sh, 90) + 'px';
+            field.style.overflowY = sh > 90 ? 'auto' : 'hidden';
+        });
+        field.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!send.disabled) chirpSendDm(npcId); } });
+        send.addEventListener('click', () => chirpSendDm(npcId));
+    }
+
+    // Scroll to bottom
+    requestAnimationFrame(() => {
+        const msgs = chirpEl(`chirp-dm-msgs-${npcId}`);
+        if (msgs) msgs.scrollTop = msgs.scrollHeight;
+    });
+}
+
+async function chirpSendDm(npcId) {
+    const field = chirpEl(`chirp-dm-field-${npcId}`);
+    if (!field) return;
+    const text = field.value.trim();
+    if (!text) return;
+
+    // Clear input immediately
+    field.value = '';
+    field.style.height = 'auto';
+    field.style.overflowY = 'hidden';
+    const send = chirpEl(`chirp-dm-send-${npcId}`);
+    if (send) send.disabled = true;
+
+    // Save user message
+    const dmsObj = chirpGetDMs();
+    if (!Array.isArray(dmsObj[npcId])) dmsObj[npcId] = [];
+    const userMsg = { role: 'user', content: text, timestamp: Date.now(), read: true };
+    dmsObj[npcId].push(userMsg);
+    chirpSaveDMs(dmsObj);
+    await saveChatMeta();
+
+    // Re-render to show user message immediately
+    chirpRenderDmChat(npcId);
+    chirpRenderDmSidebar();
+
+    // Typing indicator
+    const msgs = chirpEl(`chirp-dm-msgs-${npcId}`);
+    if (msgs) {
+        const typingEl = document.createElement('div');
+        typingEl.className = 'chirp-dm-msg them';
+        typingEl.id = `chirp-typing-${npcId}`;
+        typingEl.innerHTML = `<div class="chirp-dm-msg-av">${chirpEl('chirp-dm-chat-area')?.querySelector('.chirp-dm-chat-hdr-av')?.innerHTML || ''}</div><div class="chirp-dm-typing-wrap"><div class="chirp-dm-typing-dot"></div><div class="chirp-dm-typing-dot"></div><div class="chirp-dm-typing-dot"></div></div>`;
+        msgs.appendChild(typingEl);
+        msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    try {
+        const npc = chirpGetNpcById(npcId);
+        const s = getSettings();
+        const u = s.chirpUserProfile;
+        let prompt = (s.chirpDmPrompt || chirpDefaults.chirpDmPrompt)
+            .replace(/\{\{npc_name\}\}/g, npc.name)
+            .replace(/\{\{npc_username\}\}/g, npc.username)
+            .replace(/\{\{personality\}\}/g, npc.character || 'Friendly')
+            .replace(/\{\{post_style\}\}/g, npc.postExample ? `Style: ${npc.postExample}` : 'Casual')
+            .replace(/\{\{user_name\}\}/g, u.name || 'Player')
+            .replace(/\{\{user_username\}\}/g, u.username || 'player')
+            .replace(/\{\{context\}\}/g, gatherContext());
+        const freshDms = chirpGetDMs();
+        const conv = Array.isArray(freshDms[npcId]) ? freshDms[npcId] : [];
+        const history = conv.slice(-8).map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
+        const reply = await chirpCallApi([{ role: 'system', content: prompt }, ...history]);
+        if (reply?.trim()) {
+            const npcMsg = { role: 'npc', content: reply.trim(), timestamp: Date.now(), read: false };
+            const dmsObj2 = chirpGetDMs();
+            if (!Array.isArray(dmsObj2[npcId])) dmsObj2[npcId] = [];
+            dmsObj2[npcId].push(npcMsg);
+            chirpSaveDMs(dmsObj2);
+            await saveChatMeta();
+            // Increase affection with reason
+            const _dmsCount = (chirpGetDMs()[npcId] || []).length;
+            chirpAddAffectionReason(npcId, _dmsCount <= 2 ? 'dm_first' : 'dm_reply');
+            chirpAddNotif({ type: 'dm', actorId: npcId, actorName: npc.name, actorAvatar: npc.avatar, message: 'replied to your message', quote: reply.trim().slice(0, 70) });
+        }
+    } catch (err) {
+        console.error('[Chirp] DM error:', err);
+        toastr.error('DM failed: ' + err.message);
+    } finally {
+        chirpEl(`chirp-typing-${npcId}`)?.remove();
+        chirpRenderDmChat(npcId);
+        chirpRenderDmSidebar();
+        chirpUpdateBadges();
+    }
+}
+
+// ── Notifications ─────────────────────────────────────────────────
+function chirpRenderNotifications() {
+    const scroll = chirpEl('chirp-notifs-scroll'); if (!scroll) return;
+    const notifs = chirpGetNotifs();
+    scroll.innerHTML = '';
+    if (!notifs.length) { scroll.innerHTML = `<div class="chirp-empty-state"><i class="fa-regular fa-bell"></i><div class="chirp-empty-title">All caught up!</div></div>`; return; }
+    const unread = notifs.filter(n => !n.read).length;
+    if (unread > 0) {
+        const bar = document.createElement('div');
+        bar.style.cssText = 'padding:5px 14px;text-align:right;border-bottom:1px solid var(--chirp-border);';
+        bar.innerHTML = `<button style="background:transparent;border:none;color:var(--chirp-accent);font-size:0.79em;cursor:pointer;font-family:inherit;padding:3px 6px;">Mark all as read</button>`;
+        bar.querySelector('button').addEventListener('click', () => { chirpGetNotifs().forEach(n => n.read = true); saveChatMeta(); chirpUpdateBadges(); chirpRenderNotifications(); });
+        scroll.appendChild(bar);
+    }
+    const iconMap = { like: { cls: 'like', icon: 'fa-heart' }, retweet: { cls: 'retweet', icon: 'fa-retweet' }, reply: { cls: 'reply', icon: 'fa-reply' }, dm: { cls: 'dm', icon: 'fa-envelope' } };
+    for (const n of notifs.slice(0, 60)) {
+        const { cls, icon } = iconMap[n.type] || { cls: 'reply', icon: 'fa-bell' };
+        const avHtml = n.actorAvatar ? `<img src="${chirpEsc(n.actorAvatar)}" alt="">` : chirpEsc((n.actorName||'?')[0]);
+        const item = document.createElement('div');
+        item.className = 'chirp-notif-item' + (n.read ? '' : ' unread');
+        item.innerHTML = `<div class="chirp-notif-icon ${cls}"><i class="fa-solid ${icon}"></i></div><div class="chirp-notif-av">${avHtml}</div><div class="chirp-notif-body"><span class="chirp-notif-actor">${chirpEsc(n.actorName||'?')}</span> <span class="chirp-notif-txt">${chirpEsc(n.message)}</span>${n.quote ? `<div class="chirp-notif-quote">${chirpFormatContent(n.quote)}</div>` : ''}</div><span class="chirp-notif-time">${chirpRelTime(n.timestamp)}</span>`;
+        item.addEventListener('click', () => {
+            n.read = true; saveChatMeta(); chirpUpdateBadges();
+            if (n.postId) { chirpSwitchSubPanel('home'); setTimeout(() => chirpOpenThread(n.postId, false), 100); }
+            else if (n.type === 'dm' && n.actorId) { chirpSwitchSubPanel('dms'); setTimeout(() => chirpOpenDm(n.actorId), 100); }
+            chirpRenderNotifications();
+        });
+        scroll.appendChild(item);
+    }
+}
+
+// ── Profile ───────────────────────────────────────────────────────
+function chirpRenderProfile(targetId) {
+    const cont = chirpEl('chirp-profile-content'); if (!cont) return;
+    const s = getSettings();
+    const isOwn = !targetId || targetId === 'user';
+    let profile;
+    if (isOwn) { profile = s.chirpUserProfile; }
+    else { const npc = chirpGetNpcById(targetId); if (!npc) return; profile = { name: npc.name, username: npc.username, avatar: npc.avatar, banner: npc.banner, bio: npc.bio || npc.character || '', _npcId: targetId }; }
+    chirpRenderProfileInto(cont, profile, isOwn);
+}
+
+function chirpRenderProfileInto(cont, profile, isOwn) {
+    const s = getSettings();
+    const npcId = profile._npcId;
+    const posts = chirpGetPosts().filter(p => p.authorId === (isOwn ? 'user' : npcId));
+    const affection = !isOwn && npcId ? chirpGetAffection(npcId) : 0;
+    const stage = chirpGetLoveStage(affection);
+    const fl = profile._fl || (profile._fl = Math.floor(Math.random() * 8000 + 100));
+    const fg = profile._fg || (profile._fg = Math.floor(Math.random() * 400 + 20));
+    const bannerStyle = profile.banner ? `style="background-image:url('${chirpEsc(profile.banner)}');background-size:cover;background-position:center;"` : '';
+    const avHtml = profile.avatar ? `<img src="${chirpEsc(profile.avatar)}" alt="">` : `<span style="font-size:25px;font-weight:700;">${chirpEsc((profile.name||'?')[0])}</span>`;
+
+    cont.innerHTML = `
+      <div class="chirp-profile-banner" id="chirp-pf-banner" ${bannerStyle}>
+        <div class="chirp-profile-banner-edit"><i class="fa-solid fa-camera"></i> Change banner</div>
+      </div>
+      <div class="chirp-profile-info-row">
+        <div class="chirp-profile-av-wrap" id="chirp-pav-wrap"><div class="chirp-profile-av">${avHtml}</div>${isOwn||!isOwn?`<div class="chirp-profile-av-edit"><i class="fa-solid fa-camera"></i></div>`:''}</div>
+        ${isOwn ? `<button class="chirp-profile-edit-btn" id="chirp-pedit-btn"><i class="fa-solid fa-pen"></i> Edit profile</button>` : `<div style="display:flex;gap:6px;"><button class="chirp-profile-follow-btn ${profile._following?'following':''}" id="chirp-follow-btn">${profile._following?'Following':'Follow'}</button><button style="background:transparent;border:1px solid var(--chirp-border);border-radius:20px;padding:6px 12px;font-size:0.84em;color:var(--chirp-text);cursor:pointer;font-family:inherit;" id="chirp-dm-from-p"><i class="fa-regular fa-envelope"></i></button></div>`}
+      </div>
+      <div class="chirp-profile-meta">
+        <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;flex-wrap:wrap;">
+          <span class="chirp-profile-name">${chirpEsc(profile.name||'User')}</span>
+          <span class="chirp-profile-verified"><i class="fa-solid fa-circle-check"></i></span>
+          ${!isOwn ? chirpHeartsHtml(affection, 'lg') : ''}
+        </div>
+        <div class="chirp-profile-handle">@${chirpEsc(profile.username||'user')}</div>
+        ${!isOwn ? `<div class="chirp-love-bar-row" style="margin:6px 0;">
+          <div style="font-size:0.8em;color:${stage.color};font-weight:700;margin-bottom:4px;">${stage.icon} <span>${stage.label}</span> — ${affection}/100</div>
+          <div style="background:rgba(128,128,128,0.15);border-radius:10px;height:5px;overflow:hidden;margin-bottom:8px;"><div style="height:100%;width:${affection}%;background:${stage.color};border-radius:10px;transition:width 0.4s;"></div></div>
+          ${(() => {
+            const _npcLogObj = s.npcAssistants?.find(n=>n.id===npcId);
+            const _log = _npcLogObj?._affectionLog||[];
+            return _log.length ? `<div class="chirp-afflog">${_log.slice(0,8).map(e=>{const d=new Date(e.ts);const when=d.toLocaleDateString('ru',{day:'numeric',month:'short'});return `<div class="chirp-afflog-item"><span class="chirp-afflog-delta ${e.delta>0?'pos':'neg'}">${e.delta>0?'+'+e.delta:e.delta}</span><span class="chirp-afflog-label">${e.label}</span><span class="chirp-afflog-time">${when}</span></div>`;}).join('')}</div>` : '';
+          })()}
+        </div>` : ''}
+        <div class="chirp-profile-bio" id="chirp-pbio">${chirpEsc(profile.bio||'')}</div>
+        <div class="chirp-profile-stats">
+          <div class="chirp-stat"><span class="chirp-stat-num">${posts.length}</span> <span class="chirp-stat-label">Posts</span></div>
+          <div class="chirp-stat"><span class="chirp-stat-num">${fl}</span> <span class="chirp-stat-label">Followers</span></div>
+          <div class="chirp-stat"><span class="chirp-stat-num">${fg}</span> <span class="chirp-stat-label">Following</span></div>
+        </div>
+      </div>
+      <div class="chirp-profile-tabs">
+        <button class="chirp-profile-tab active" data-pt="posts">Posts</button>
+        <button class="chirp-profile-tab" data-pt="likes">Likes</button>
+      </div>
+      <div id="chirp-profile-posts">${posts.length ? posts.slice(0,40).map(p => chirpBuildCard(p, {compact:true})).join('') : '<div class="chirp-empty-state" style="padding:24px;"><i class="fa-regular fa-newspaper"></i><div class="chirp-empty-title">No posts yet</div></div>'}</div>`;
+
+    // Banner upload (works for both own and NPC)
+    cont.querySelector('#chirp-pf-banner')?.addEventListener('click', () => {
+        const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+        inp.onchange = e => chirpReadImg(e.target.files[0], url => {
+            if (isOwn) { s.chirpUserProfile.banner = url; saveSettings(); }
+            else { const npc = s.npcAssistants?.find(n => n.id === npcId); if (npc) { npc.banner = url; saveSettings(); } }
+            chirpRenderProfileInto(cont, { ...profile, banner: url }, isOwn);
+        });
+        inp.click();
+    });
+
+    // Avatar click
+    cont.querySelector('#chirp-pav-wrap')?.addEventListener('click', () => {
+        const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+        inp.onchange = e => chirpReadImg(e.target.files[0], url => {
+            if (isOwn) { s.chirpUserProfile.avatar = url; saveSettings(); chirpRenderComposeAv(); chirpLoadSocialSettings(); }
+            else { const npc = s.npcAssistants?.find(n => n.id === npcId); if (npc) { npc.avatar = url; saveSettings(); renderNpcList(); } }
+            chirpRenderProfileInto(cont, { ...profile, avatar: url }, isOwn);
+        });
+        inp.click();
+    });
+
+    // Edit / Follow / DM buttons
+    if (isOwn) {
+        chirpEl('chirp-pedit-btn')?.addEventListener('click', () => chirpShowProfileEditForm(cont, s.chirpUserProfile));
+    } else {
+        chirpEl('chirp-follow-btn')?.addEventListener('click', e => {
+            profile._following = !profile._following;
+            const npc = s.npcAssistants?.find(n => n.id === npcId);
+            if (npc) { npc._following = profile._following; saveSettings(); }
+            e.target.textContent = profile._following ? 'Following' : 'Follow';
+            e.target.classList.toggle('following', profile._following);
+        });
+        chirpEl('chirp-dm-from-p')?.addEventListener('click', () => { chirpSwitchSubPanel('dms'); setTimeout(() => chirpOpenDm(npcId), 80); });
+    }
+
+    // Profile tabs
+    cont.querySelectorAll('.chirp-profile-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            cont.querySelectorAll('.chirp-profile-tab').forEach(t => t.classList.remove('active')); tab.classList.add('active');
+            const pc = chirpEl('chirp-profile-posts'); if (!pc) return;
+            const all = chirpGetPosts().filter(p => p.authorId === (isOwn ? 'user' : npcId));
+            if (tab.dataset.pt === 'likes') {
+                const liked = chirpGetPosts().filter(p => p.likes.includes(isOwn ? 'user' : npcId));
+                pc.innerHTML = liked.length ? liked.map(p => chirpBuildCard(p, {compact:true})).join('') : '<div class="chirp-empty-state" style="padding:24px;"><div class="chirp-empty-title">No liked posts</div></div>';
+            } else {
+                pc.innerHTML = all.length ? all.slice(0,40).map(p => chirpBuildCard(p, {compact:true})).join('') : '<div class="chirp-empty-state" style="padding:24px;"><i class="fa-regular fa-newspaper"></i><div class="chirp-empty-title">No posts yet</div></div>';
+            }
+            chirpBindFeedEvents(pc);
+        });
+    });
+    chirpBindFeedEvents(cont);
+}
+
+function chirpShowProfileEditForm(cont, profile) {
+    const bioEl = chirpEl('chirp-pbio'); if (!bioEl) return;
+    const s = getSettings();
+    bioEl.outerHTML = `<div id="chirp-edit-form" style="padding-bottom:10px;">
+      <div style="display:flex;flex-direction:column;gap:5px;">
+        <label style="font-size:0.74em;color:var(--chirp-accent);">Display name</label>
+        <input type="text" id="chirp-ef-name" value="${chirpEsc(profile.name||'')}" style="padding:7px 10px;border:1px solid var(--chirp-border);border-radius:6px;background:transparent;color:var(--chirp-text);font-size:0.9em;">
+        <label style="font-size:0.74em;color:var(--chirp-accent);">Handle (no @)</label>
+        <input type="text" id="chirp-ef-handle" value="${chirpEsc(profile.username||'')}" style="padding:7px 10px;border:1px solid var(--chirp-border);border-radius:6px;background:transparent;color:var(--chirp-text);font-size:0.9em;">
+        <label style="font-size:0.74em;color:var(--chirp-accent);">Bio</label>
+        <textarea id="chirp-ef-bio" rows="2" style="padding:7px 10px;border:1px solid var(--chirp-border);border-radius:6px;background:transparent;color:var(--chirp-text);font-size:0.9em;resize:vertical;font-family:inherit;">${chirpEsc(profile.bio||'')}</textarea>
+        <div style="display:flex;gap:7px;margin-top:2px;">
+          <button id="chirp-ef-save" style="background:var(--chirp-accent);border:none;border-radius:20px;color:#fff;font-size:0.84em;font-weight:700;padding:6px 16px;cursor:pointer;font-family:inherit;">Save</button>
+          <button id="chirp-ef-cancel" style="background:transparent;border:1px solid var(--chirp-border);border-radius:20px;color:var(--chirp-text);font-size:0.84em;padding:6px 14px;cursor:pointer;font-family:inherit;">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+    chirpEl('chirp-ef-save')?.addEventListener('click', () => {
+        const n = chirpEl('chirp-ef-name')?.value.trim(); if (n) { s.chirpUserProfile.name = n; profile.name = n; }
+        const h = chirpEl('chirp-ef-handle')?.value.trim().replace(/^@/,''); if (h) { s.chirpUserProfile.username = h; profile.username = h; }
+        const b = chirpEl('chirp-ef-bio')?.value || ''; s.chirpUserProfile.bio = b; profile.bio = b;
+        saveSettings(); chirpRenderProfile(null); chirpRenderComposeAv(); chirpLoadSocialSettings();
+    });
+    chirpEl('chirp-ef-cancel')?.addEventListener('click', () => chirpRenderProfile(null));
+}
+
+// ── NPC Profile modal ─────────────────────────────────────────────
+function chirpOpenProfileModal(authorId) {
+    if (!authorId || authorId === 'user') {
+        if (chirpActiveSubPanel === 'profile') { chirpRenderProfile(null); return; }
+        chirpSwitchSubPanel('profile'); return;
+    }
+    const npc = chirpGetNpcById(authorId); if (!npc) return;
+    const layer = chirpEl('chirp-modal-layer'); if (!layer) return;
+    layer.style.display = 'flex';
+    layer.dataset.mode = 'profile';
+    const titleEl = chirpEl('chirp-modal-title'); if (titleEl) titleEl.textContent = npc.name;
+    const scroll = chirpEl('chirp-modal-scroll'); if (!scroll) return;
+    scroll.innerHTML = '';
+    const fakeProfile = { name: npc.name, username: npc.username, avatar: npc.avatar, banner: npc.banner, bio: npc.bio || npc.character || '', _npcId: authorId, _following: npc._following };
+    chirpRenderProfileInto(scroll, fakeProfile, false);
+}
+
+// ── Sub-panel switching ───────────────────────────────────────────
+function chirpSwitchSubPanel(name) {
+    chirpActiveSubPanel = name;
+    document.querySelectorAll('.chirp-sub-panel').forEach(p => p.classList.remove('active'));
+    const panel = chirpEl(`chirp-sp-${name}`); if (panel) panel.classList.add('active');
+    document.querySelectorAll('.chirp-nav-btn[data-sp]').forEach(b => b.classList.toggle('active', b.dataset.sp === name));
+    // Close modal if open
+    const layer = chirpEl('chirp-modal-layer'); if (layer) layer.style.display = 'none';
+    if (name === 'home') chirpRenderFeed();
+    else if (name === 'notifs') {
+        chirpRenderNotifications();
+        setTimeout(() => { chirpGetNotifs().forEach(n => n.read = true); saveChatMeta(); chirpUpdateBadges(); }, 2500);
+    }
+    else if (name === 'dms') { chirpRenderDmSidebar(); if (chirpActiveDmNpcId) chirpRenderDmChat(chirpActiveDmNpcId); }
+    else if (name === 'profile') chirpRenderProfile(null);
+    else if (name === 'bookmarks') chirpRenderBookmarks();
+}
+
+// ── Compose avatar ────────────────────────────────────────────────
+function chirpRenderComposeAv() {
+    const el = chirpEl('chirp-compose-av-el'); if (!el) return;
+    const u = getSettings().chirpUserProfile;
+    el.innerHTML = u.avatar ? `<img src="${chirpEsc(u.avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : `<span style="font-size:16px;font-weight:700;">${chirpEsc((u.name||'?')[0])}</span>`;
+}
+
+// ── Settings: Social tab ──────────────────────────────────────────
+function chirpLoadSocialSettings() {
+    const s = getSettings(); const u = s.chirpUserProfile || {};
+    const el = id => chirpEl(id);
+    if (el('chirp-st-name')) el('chirp-st-name').value = u.name || '';
+    if (el('chirp-st-handle')) el('chirp-st-handle').value = u.username || '';
+    if (el('chirp-st-bio')) el('chirp-st-bio').value = u.bio || '';
+    if (el('chirp-st-count')) el('chirp-st-count').value = s.chirpPostCount || 4;
+    if (el('chirp-st-feed-prompt')) el('chirp-st-feed-prompt').value = s.chirpFeedPrompt || chirpDefaults.chirpFeedPrompt;
+    if (el('chirp-st-dm-prompt')) el('chirp-st-dm-prompt').value = s.chirpDmPrompt || chirpDefaults.chirpDmPrompt;
+    if (el('chirp-st-av')) el('chirp-st-av').innerHTML = u.avatar ? `<img src="${chirpEsc(u.avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : '<i class="fa-solid fa-user"></i>';
+}
+
+function chirpBindSocialSettingsEvents() {
+    let st; const debounce = (delay, fn) => (...a) => { clearTimeout(st); st = setTimeout(() => fn(...a), delay); };
+    const saveProfile = debounce(400, () => {
+        const s = getSettings();
+        const n = chirpEl('chirp-st-name')?.value.trim(); if (n) s.chirpUserProfile.name = n;
+        const h = chirpEl('chirp-st-handle')?.value.trim().replace(/^@/,''); if (h) s.chirpUserProfile.username = h;
+        s.chirpUserProfile.bio = chirpEl('chirp-st-bio')?.value || '';
+        s.chirpPostCount = parseInt(chirpEl('chirp-st-count')?.value) || 4;
+        saveSettings(); chirpRenderComposeAv();
+    });
+    chirpEl('chirp-st-name')?.addEventListener('input', saveProfile);
+    chirpEl('chirp-st-handle')?.addEventListener('input', saveProfile);
+    chirpEl('chirp-st-bio')?.addEventListener('input', saveProfile);
+    chirpEl('chirp-st-count')?.addEventListener('change', saveProfile);
+    chirpEl('chirp-st-feed-prompt')?.addEventListener('input', debounce(700, () => { const s = getSettings(); s.chirpFeedPrompt = chirpEl('chirp-st-feed-prompt')?.value || ''; saveSettings(); }));
+    chirpEl('chirp-st-dm-prompt')?.addEventListener('input', debounce(700, () => { const s = getSettings(); s.chirpDmPrompt = chirpEl('chirp-st-dm-prompt')?.value || ''; saveSettings(); }));
+    chirpEl('chirp-st-av')?.addEventListener('click', () => {
+        const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+        inp.onchange = e => chirpReadImg(e.target.files[0], url => {
+            const s = getSettings(); s.chirpUserProfile.avatar = url; saveSettings();
+            const av = chirpEl('chirp-st-av'); if (av) av.innerHTML = `<img src="${chirpEsc(url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+            chirpRenderComposeAv();
+        });
+        inp.click();
+    });
+    chirpEl('chirp-st-reset-prompts')?.addEventListener('click', () => {
+        const s = getSettings();
+        s.chirpFeedPrompt = chirpDefaults.chirpFeedPrompt;
+        s.chirpDmPrompt = chirpDefaults.chirpDmPrompt;
+        saveSettings(); chirpLoadSocialSettings();
+        toastr.success('Prompts reset to default');
+    });
+}
+
+function chirpReadImg(file, cb) { if (!file) return; const r = new FileReader(); r.onload = e => cb(e.target.result); r.readAsDataURL(file); }
